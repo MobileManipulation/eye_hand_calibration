@@ -1,0 +1,17 @@
+<package>
+  <description brief="eyehand_calib">
+
+     eyehand_calib
+
+  </description>
+  <author>momap</author>
+  <license></license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/eyehand_calib</url>
+  <depend package="roscpp"/>
+  <depend package="sensor_msgs"/>
+  <depend package="geometry_msgs"/>
+
+</package>
+
+
