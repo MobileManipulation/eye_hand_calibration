@@ -28,7 +28,7 @@ add_service_files(FILES
 generate_messages(DEPENDENCIES std_msgs robot_msgs geometry_msgs)
 
 catkin_package(
-  INCLUDE_DIRS include
+  #INCLUDE_DIRS include
  # LIBRARIES
 )
 
@@ -36,7 +36,6 @@ catkin_package(
 add_executable(observation_node src/observation_node.cpp)
 target_include_directories(observation_node
   PUBLIC
-    include
     ${catkin_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIRS}
     ${PCL_INCLUDE_DIRS}

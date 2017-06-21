@@ -46,7 +46,7 @@ class EyeHandCalibrator(object):
         conf.robotRightGripper = conf["robotRightGripper"]
 
         proxy = rospy.ServiceProxy('/capture_data', Capture)
-        req = CaptureRequest(self.config['data_path'], data_point,
+        req = CaptureRequest(self.current_dir, data_point,
             self.config['frame_count'], conf, cam_pose, world_pose)
         resp = proxy(req)
 
@@ -55,11 +55,21 @@ class EyeHandCalibrator(object):
 
     def run_test(self):
         # create experiment directory
+        date = datetime.utcnow()
+        day_dir = date.strftime("%Y%m%d")
+        exp_dir = date.strftime("%Y%m%dT%H%M%S_eyehand")
+        data_path = '/'.join([self.config["data_root"], day_dir, exp_dir])
+
+        # Make sure the directory exists
+        os.makedirs(data_path)
 
         # Face the camera
         angle = self.config['angle']
-        for head_pose in self.head_poses():
+        for cluster_num, head_pose in enumerate(self.head_poses()):
             # Create cluster directory
+            cluster_dir = '/'.join([data_path, str(cluster_num)])
+            os.makedirs(cluster_dir)
+            self.current_dir = cluster_dir
 
             self.move_head(head_pose)
 
@@ -68,14 +78,14 @@ class EyeHandCalibrator(object):
                 print("Moving to pose:", pos)
                 success, conf, cam_pose, target_pose = self.move_to_pose(pos, angle)
                 if success and self.config['collect_data']:
-                    # try:
-                    print("Collecting data...")
-                    conf.robotHead = head_pose
-                    self.collect_data(dp, conf, cam_pose, target_pose)
-                    print("Success!")
-                    dp += 1
-                    # except:
-                    #     print("Capture failed! Continuing anyway...")
+                    try:
+                        print("Collecting data...")
+                        conf.robotHead = head_pose
+                        self.collect_data(dp, conf, cam_pose, target_pose)
+                        print("Success!")
+                        dp += 1
+                    except:
+                        print("Capture failed! Continuing anyway...")
 
 
 
@@ -218,22 +228,14 @@ def main():
     rospy.init_node('eyehand_calib')
 
     # Generate full directory name
-    date = datetime.utcnow()
-    path = "/home/momap/momap_data"
-    day_dir = date.strftime("%Y%m%d")
-    exp_dir = date.strftime("%Y%m%dT%H%M%S_eyehand")
-    data_path = '/'.join([path, day_dir, exp_dir])
-
-    # Make sure the directory exists
-    os.makedirs(data_path)
 
     config = {
         # Test parametes
-        "data_path": data_path,
+        "data_root": "/home/momap/momap_data",
         "frame_count": 10,
         "collect_data": True,
         "move_robot": True,
-        "should_fuzz": False,
+        "should_fuzz": True,
 
         # Optical frame
         "optical_frame": "kinect1_rgb_optical_frame",
@@ -241,12 +243,12 @@ def main():
         "kuka_reach_frame": "iiwa_link_0",
 
         # Head pose selection
-        "pan_low": -0.0,
+        "pan_low": -0.5,
         "pan_high": 0.5,
-        "pan_count": 1,
-        "tilt_low": -0.35,
+        "pan_count": 5,
+        "tilt_low": 0.0,
         "tilt_high": -0.7,
-        "tilt_count":   1,
+        "tilt_count":   5,
 
         # Target pattern
         "kuka_reach": 1.2,
@@ -254,7 +256,7 @@ def main():
         "far_fov": 0.9,
         "horiz_angle": 40.0 * math.pi / 180.0,
         "vert_angle": 25.0 * math.pi / 180.0,
-        "grid_size": 2
+        "grid_size": 4
     }
 
     tester = EyeHandCalibrator(config)

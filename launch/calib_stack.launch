@@ -1,14 +1,16 @@
 <launch>
   <!-- Simulator launches -->
+<!--
     <node name="kuka_sim" pkg="eyehand_calib" type="kuka_sim.sh" required="true"/>
     <node name="ptu_sim" pkg="eyehand_calib" type="ptu_sim.py" required="true"/>
+-->
 
   <!-- robot_server master.launch -->
     <!-- Loads the Kuka URDF and drivers. -->
-   	<include file="$(find robot_server)/launch/core/master.launch"/>
+<!--   	<include file="$(find robot_server)/launch/core/master.launch"/> -->
 
   <!-- robot_server slave.launch -->
-    <arg name="port" default="/dev/ptu" />
+<!--    <arg name="port" default="/dev/ptu" />
     <node name="ptu_driver" pkg="flir_ptu_driver" type="ptu_node" ns="ptu">
       <param name="port" value="$(arg port)" />
       <remap from="state" to="/ptu_joint_states" />
@@ -16,9 +18,13 @@
 
     <node name="time_manager" pkg="robot_server" type="manage_system.sh" respawn="true"/>
     <node name="gripper_server" pkg="robot_control" type="gripper_server.py" respawn="true"/>
+-->
 
     <!-- Turn up kinect -->
+<!--
     <include file="$(find robot_server)/launch/perception/kinect1.launch"/>
+-->
+
 
   <!-- Load robot_prims parameters -->
   	<rosparam command="load" file="$(find robot_prims)/data/conf_settings.yaml"/>
@@ -27,4 +33,6 @@
   <!-- aruco tags -->
     <node name="aruco_tags" pkg="aruco_ros" type="marker_publisher" required="true"/>
 
+  <!-- observation node -->
+    <node name="observation_node" pkg="eyehand_calib" type="observation_node" required="true" output="screen"/>
 </launch>
