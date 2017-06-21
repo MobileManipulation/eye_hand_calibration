@@ -1,0 +1,29 @@
+<?sml version="1.0"?>
+<package format="2">
+  <name>eyehand_calib</name>
+  <version>0.1.0</version>
+  <description>
+     A data-collection tool for eye-hand calibration of the KUKA.
+  </description>
+  <author email="clawson@draper.com">Connor Lawson</author>
+  <maintainer email="clawson@draper.com">Connor Lawson</maintainer>
+  <license>Draper Internal</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <!-- Generic ROS dependencies -->
+  <depend>roscpp</depend>
+  <depend>rospy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <!-- AVL repo dependencies -->
+  <depend>robot_prims</depend>
+  <depend>perception_interfaces</depend>
+
+
+</package>
+
+

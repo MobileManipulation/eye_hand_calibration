@@ -1,30 +1,58 @@
-cmake_minimum_required(VERSION 2.4.6)
-include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
+cmake_minimum_required(VERSION 2.8.3)
+project(eyehand_calib)
 
-# Set the build type.  Options are:
-#  Coverage       : w/ debug symbols, w/o optimization, w/ code-coverage
-#  Debug          : w/ debug symbols, w/o optimization
-#  Release        : w/o debug symbols, w/ optimization
-#  RelWithDebInfo : w/ debug symbols, w/ optimization
-#  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-#set(ROS_BUILD_TYPE RelWithDebInfo)
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  tf
+  std_msgs
+  sensor_msgs
+  geometry_msgs
+  robot_msgs
+  trajectory_msgs
+  cv_bridge
+)
+find_package(Boost REQUIRED COMPONENTS
+  filesystem
+)
+find_package(PCL 1.8 REQUIRED COMPONENTS
+  common
+  io
+)
+find_package(OpenCV REQUIRED)
 
-rosbuild_init()
+add_service_files(FILES
+  Capture.srv
+)
 
-#set the default path for built executables to the "bin" directory
-set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
-#set the default path for built libraries to the "lib" directory
-set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
+generate_messages(DEPENDENCIES std_msgs robot_msgs geometry_msgs)
 
-#uncomment if you have defined messages
-#rosbuild_genmsg()
-#uncomment if you have defined services
-#rosbuild_gensrv()
+catkin_package(
+  INCLUDE_DIRS include
+ # LIBRARIES
+)
 
-#common commands for building c++ executables and libraries
-#rosbuild_add_library(${PROJECT_NAME} src/example.cpp)
-#target_link_libraries(${PROJECT_NAME} another_library)
-#rosbuild_add_boost_directories()
-#rosbuild_link_boost(${PROJECT_NAME} thread)
-#rosbuild_add_executable(example examples/example.cpp)
-#target_link_libraries(example ${PROJECT_NAME})
+
+add_executable(observation_node src/observation_node.cpp)
+target_include_directories(observation_node
+  PUBLIC
+    include
+    ${catkin_INCLUDE_DIRS}
+    ${Boost_INCLUDE_DIRS}
+    ${PCL_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(observation_node
+  PUBLIC
+    ${catkin_LIBRARIES}
+    ${Boost_LIBRARIES}
+    ${PCL_LIBRARIES}
+    ${OpenCV_LIBRARIES}
+)
+target_compile_features(observation_node
+  PRIVATE
+    cxx_auto_type
+    cxx_lambdas
+    cxx_nonstatic_member_init
+    cxx_range_for
+)
