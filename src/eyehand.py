@@ -22,6 +22,9 @@ from eyehand_calib.srv import *
 import numpy as np
 import math
 
+from datetime import datetime
+import os
+
 class EyeHandCalibrator(object):
     def __init__(self, config):
         self.config = config
@@ -214,9 +217,19 @@ def main():
     # Initialize ROS node
     rospy.init_node('eyehand_calib')
 
+    # Generate full directory name
+    date = datetime.utcnow()
+    path = "/home/momap/momap_data"
+    day_dir = date.strftime("%Y%m%d")
+    exp_dir = date.strftime("%Y%m%dT%H%M%S_eyehand")
+    data_path = '/'.join([path, day_dir, exp_dir])
+
+    # Make sure the directory exists
+    os.makedirs(data_path)
+
     config = {
         # Test parametes
-        "data_path": "/home/momap/test_data2",
+        "data_path": data_path,
         "frame_count": 10,
         "collect_data": True,
         "move_robot": True,
@@ -237,10 +250,10 @@ def main():
 
         # Target pattern
         "kuka_reach": 1.2,
-        "near_fov": 0.5,
+        "near_fov": 0.6,
         "far_fov": 0.9,
-        "horiz_angle": 45.0 * math.pi / 180.0,
-        "vert_angle": 30.0 * math.pi / 180.0,
+        "horiz_angle": 40.0 * math.pi / 180.0,
+        "vert_angle": 25.0 * math.pi / 180.0,
         "grid_size": 2
     }
 
