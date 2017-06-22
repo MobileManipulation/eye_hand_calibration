@@ -18,6 +18,7 @@ find_package(Boost REQUIRED COMPONENTS
 find_package(PCL 1.8 REQUIRED COMPONENTS
   common
   io
+  lexical_cast
 )
 find_package(OpenCV REQUIRED)
 
@@ -49,6 +50,27 @@ target_link_libraries(observation_node
     ${OpenCV_LIBRARIES}
 )
 target_compile_features(observation_node
+  PRIVATE
+    cxx_auto_type
+    cxx_lambdas
+    cxx_nonstatic_member_init
+    cxx_range_for
+)
+
+add_executable(crop_pointcloud src/crop_pointcloud.cpp)
+target_include_directories(crop_pointcloud
+  PUBLIC
+    ${catkin_INCLUDE_DIRS}
+    ${Boost_INCLUDE_DIRS}
+    ${PCL_INCLUDE_DIRS}
+)
+target_link_libraries(crop_pointcloud
+  PUBLIC
+    ${catkin_LIBRARIES}
+    ${Boost_LIBRARIES}
+    ${PCL_LIBRARIES}
+)
+target_compile_features(crop_pointcloud
   PRIVATE
     cxx_auto_type
     cxx_lambdas
