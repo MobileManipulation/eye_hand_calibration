@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
 
 	// Radius of interest
 	float r = boost::lexical_cast<float>(argv[1]);
-	
+
 	// Loop over all input files
 	for (int j = 2; j < argc; j++)
 	{
@@ -56,7 +56,7 @@ int main(int argc, char* argv[])
 			std::cout << "X" << x_str << std::endl;
 			std::cout << "Y" << y_str << std::endl;
 			std::cout << "Z" << z_str << std::endl;
-		
+
 			float x = boost::lexical_cast<float>(x_str);
 			float y = boost::lexical_cast<float>(y_str);
 			float z = boost::lexical_cast<float>(z_str);
@@ -65,11 +65,11 @@ int main(int argc, char* argv[])
 			center.x = x;
 			center.y = y;
 			center.z = z;
-		
+
 			// Construct the PCD filename
-			std::string pcd_prefix = path.string() + "/" + datapoint 
-					+ "/" + datapoint + "_" 
-					+ "0" + frame_str + "_"; 
+			std::string pcd_prefix = path.string() + "/" + datapoint
+					+ "/" + datapoint + "_"
+					+ "0" + frame_str + "_";
 			std::string raw_pcd = pcd_prefix + "raw_points.pcd";
 			std::string crop_pcd = pcd_prefix + "cropped.pcd";
 

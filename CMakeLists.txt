@@ -18,7 +18,7 @@ find_package(Boost REQUIRED COMPONENTS
 find_package(PCL 1.8 REQUIRED COMPONENTS
   common
   io
-  lexical_cast
+  segmentation
 )
 find_package(OpenCV REQUIRED)
 
@@ -33,47 +33,32 @@ catkin_package(
  # LIBRARIES
 )
 
+macro(calib_target target_name)
+  add_executable(${target_name} src/${target_name}.cpp)
+  target_include_directories(${target_name}
+    PUBLIC
+      ${catkin_INCLUDE_DIRS}
+      ${Boost_INCLUDE_DIRS}
+      ${PCL_INCLUDE_DIRS}
+      ${OpenCV_INCLUDE_DIRS}
+  )
+  target_link_libraries(${target_name}
+    PUBLIC
+      ${catkin_LIBRARIES}
+      ${Boost_LIBRARIES}
+      ${PCL_LIBRARIES}
+      ${OpenCV_LIBRARIES}
+  )
+  target_compile_features(${target_name}
+    PRIVATE
+      cxx_auto_type
+      cxx_lambdas
+      cxx_nonstatic_member_init
+      cxx_range_for
+  )
+endmacro(calib_target)
 
-add_executable(observation_node src/observation_node.cpp)
-target_include_directories(observation_node
-  PUBLIC
-    ${catkin_INCLUDE_DIRS}
-    ${Boost_INCLUDE_DIRS}
-    ${PCL_INCLUDE_DIRS}
-    ${OpenCV_INCLUDE_DIRS}
-)
-target_link_libraries(observation_node
-  PUBLIC
-    ${catkin_LIBRARIES}
-    ${Boost_LIBRARIES}
-    ${PCL_LIBRARIES}
-    ${OpenCV_LIBRARIES}
-)
-target_compile_features(observation_node
-  PRIVATE
-    cxx_auto_type
-    cxx_lambdas
-    cxx_nonstatic_member_init
-    cxx_range_for
-)
-
-add_executable(crop_pointcloud src/crop_pointcloud.cpp)
-target_include_directories(crop_pointcloud
-  PUBLIC
-    ${catkin_INCLUDE_DIRS}
-    ${Boost_INCLUDE_DIRS}
-    ${PCL_INCLUDE_DIRS}
-)
-target_link_libraries(crop_pointcloud
-  PUBLIC
-    ${catkin_LIBRARIES}
-    ${Boost_LIBRARIES}
-    ${PCL_LIBRARIES}
-)
-target_compile_features(crop_pointcloud
-  PRIVATE
-    cxx_auto_type
-    cxx_lambdas
-    cxx_nonstatic_member_init
-    cxx_range_for
-)
+calib_target(observation_node)
+calib_target(crop_pointcloud)
+calib_target(csv_merge1)
+calib_target(plane_fit)

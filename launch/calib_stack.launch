@@ -14,7 +14,7 @@
     <node name="ptu_driver" pkg="flir_ptu_driver" type="ptu_node" ns="ptu">
       <param name="port" value="$(arg port)" />
       <remap from="state" to="/ptu_joint_states" />
-    </node>
+    </node> -->
 
     <node name="time_manager" pkg="robot_server" type="manage_system.sh" respawn="true"/>
     <node name="gripper_server" pkg="robot_control" type="gripper_server.py" respawn="true"/>
