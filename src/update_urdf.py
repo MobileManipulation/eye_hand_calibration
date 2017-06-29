@@ -1,4 +1,6 @@
-import xml.etree.ElementTree as ET
+#!/usr/bin/env python
+
+import lxml.etree as ET
 import os
 from itertools import islice
 
@@ -7,8 +9,8 @@ import tf.transformations as transf
 
 path = "/home/momap/momap/src/robot_core/robot_descriptions/robot_description/urdf"
 urdf_in = "draper_ptu_gripper-rviz2.urdf"
-urdf_out = "draper_ptu_gripper-eyehand1.urdf"
-shouldWrite = True
+urdf_out = "draper_ptu_gripper-eyehand1c.urdf"
+shouldWrite = False
 
 data_path = path
 data_in = "Calibration_2017-06-28T1301_UNIX.txt"
@@ -35,13 +37,17 @@ with open(os.path.join(path, data_in)) as fp:
         xyz = tuple(map(float, islice(fp, 3)))
         quat = tuple(map(float, islice(fp, 4)))
 
-        print joint, xyz, quat
+        # Reorder quaternion...
+        #quat =  quat[1:] + (quat[0],)
 
         # Construct perturbation matrix
         T = transf.translation_matrix(xyz)
         R = transf.quaternion_matrix(quat)
         joint_data[joint] = np.dot(T, R)
 
+        print "Perturbation for {}:".format(joint)
+        print "trans: (x: {:>8.5f}, y: {:>8.5f}, z: {:>8.5f})".format(*xyz)
+        print "rot:   (x: {:>8.5f}, y: {:>8.5f}, z: {:>8.5f}, w: {:>8.5f})".format(*quat)
         print joint_data[joint]
 
 
@@ -69,9 +75,16 @@ for joint in urdf.findall('joint'):
         origin.set("xyz", "{} {} {}".format(*nxyz))
         origin.set("rpy", "{} {} {}".format(*nrpy))
 
-        print "Updated {}: {}, {} -> {} {}".format(joint_name, xyz, rpy, nxyz, nrpy)
+        print "Updated {}:".format(joint_name)
+        print "\txyz: ({:>8.5f}, {:>8.5f}, {:>8.5f})".format(*xyz)
+        print "\t  -> ({:>8.5f}, {:>8.5f}, {:>8.5f})".format(*nxyz)
+        print "\trpy: ({:>8.5f}, {:>8.5f}, {:>8.5f})".format(*rpy)
+        print "\t  -> ({:>8.5f}, {:>8.5f}, {:>8.5f})".format(*nrpy)
 
-# Write the updated URDF
 if shouldWrite:
-    urdf.write(os.path.join(path, urdf_out))
-    print "Wrote update URDF to:", urdf_out
+    # Write the updated URDF
+    urdf.write(os.path.join(path, urdf_out),
+        encoding='utf-8',
+        xml_declaration=True,
+        pretty_print=True)
+    print "Wrote updated URDF to:", urdf_out
