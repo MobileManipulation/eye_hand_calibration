@@ -31,7 +31,6 @@ joint_names = [
 urdf = ET.parse(os.path.join(data_path, urdf_in))
 
 # Read the data file
-joint_data = dict()
 with open(os.path.join(path, data_in)) as fp:
     for joint in joint_names:
         xyz = tuple(map(float, islice(fp, 3)))
@@ -43,20 +42,19 @@ with open(os.path.join(path, data_in)) as fp:
         # Construct perturbation matrix
         T = transf.translation_matrix(xyz)
         R = transf.quaternion_matrix(quat)
-        joint_data[joint] = np.dot(T, R)
+        Tp = np.dot(T, R)
 
         print "Perturbation for {}:".format(joint)
         print "trans: (x: {:>8.5f}, y: {:>8.5f}, z: {:>8.5f})".format(*xyz)
         print "rot:   (x: {:>8.5f}, y: {:>8.5f}, z: {:>8.5f}, w: {:>8.5f})".format(*quat)
-        print joint_data[joint]
+        print Tp
 
-
-# Modify the URDF according to the data
-for joint in urdf.findall('joint'):
-    # Filter to joints we care about
-    joint_name = joint.get("name")
-    if joint_name in joint_data:
-        origin = joint.find('origin')
+        # Modify the URDF according to the data
+        origin = urdf.xpath("joint[@name = '{}']/origin".format(joint))
+        if (len(origin) != 1):
+            print "WARNING: Joint {} had {} origin nodes".format(joint, len(origin))
+            continue
+        origin = origin[0]
 
         # Read old transformation
         xyz = tuple(map(float, origin.get('xyz', "0 0 0").split()))
@@ -66,7 +64,6 @@ for joint in urdf.findall('joint'):
         To = np.dot(T, R)
 
         # Compute new transformation
-        Tp = joint_data[joint_name]
         Tn = np.dot(To, Tp)
 
         # Update URDF
@@ -75,11 +72,12 @@ for joint in urdf.findall('joint'):
         origin.set("xyz", "{} {} {}".format(*nxyz))
         origin.set("rpy", "{} {} {}".format(*nrpy))
 
-        print "Updated {}:".format(joint_name)
+        print "Updated {}:".format(joint)
         print "\txyz: ({:>8.5f}, {:>8.5f}, {:>8.5f})".format(*xyz)
         print "\t  -> ({:>8.5f}, {:>8.5f}, {:>8.5f})".format(*nxyz)
         print "\trpy: ({:>8.5f}, {:>8.5f}, {:>8.5f})".format(*rpy)
         print "\t  -> ({:>8.5f}, {:>8.5f}, {:>8.5f})".format(*nrpy)
+        print ""
 
 if shouldWrite:
     # Write the updated URDF
