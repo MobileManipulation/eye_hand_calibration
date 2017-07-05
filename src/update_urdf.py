@@ -8,12 +8,12 @@ import numpy as np
 import tf.transformations as transf
 
 path = "/home/momap/momap/src/robot_core/robot_descriptions/robot_description/urdf"
-urdf_in = "draper_ptu_gripper-rviz2.urdf"
-urdf_out = "draper_ptu_gripper-eyehand1c.urdf"
+urdf_in = "draper_ptu_gripper-eyehand1c.urdf"
+urdf_out = "draper_ptu_gripper-eyehand2.urdf"
 shouldWrite = False
 
-data_path = path
-data_in = "Calibration_2017-06-28T1301_UNIX.txt"
+data_path = "/home/momap/momap_data/log_robot/20170630/20170630T155606_eyehand"
+data_in = "calibration_result.txt"
 
 # Joint names
 joint_names = [
@@ -28,16 +28,16 @@ joint_names = [
 ]
 
 # Read the URDF
-urdf = ET.parse(os.path.join(data_path, urdf_in))
+urdf = ET.parse(os.path.join(path, urdf_in))
 
 # Read the data file
-with open(os.path.join(path, data_in)) as fp:
+with open(os.path.join(data_path, data_in)) as fp:
     for joint in joint_names:
         xyz = tuple(map(float, islice(fp, 3)))
         quat = tuple(map(float, islice(fp, 4)))
 
         # Reorder quaternion...
-        #quat =  quat[1:] + (quat[0],)
+        quat =  quat[1:] + (quat[0],)
 
         # Construct perturbation matrix
         T = transf.translation_matrix(xyz)
@@ -81,8 +81,9 @@ with open(os.path.join(path, data_in)) as fp:
 
 if shouldWrite:
     # Write the updated URDF
-    urdf.write(os.path.join(path, urdf_out),
+    write_path = os.path.join(path, urdf_out)
+    urdf.write(write_path,
         encoding='utf-8',
         xml_declaration=True,
         pretty_print=True)
-    print "Wrote updated URDF to:", urdf_out
+    print "Wrote updated URDF to:", write_path

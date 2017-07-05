@@ -13,7 +13,7 @@
 void print_usage()
 {
 	std::cout << "Usage: In experiment dir:" << std::endl;
-	std::cout << "./csv_merge1 csv_file [csv_file ...]" << std::endl;
+	std::cout << "./csv_merge1 out_file" << std::endl;
 }
 
 int main(int argc, char* argv[])

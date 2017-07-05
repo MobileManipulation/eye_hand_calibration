@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 
 """
-Automated data collection script for Kuka eye-hand calibration with the Kinect.
+Automated data collection script for observation model. Script moves the KUKA
+around to build up a dense pointcloud of a target object with the wrist camera.
 
 Prereqs:
 * iiwa_calibration.yaml:
-    Set robotRightGripper -> targetConstraintFrame to calibration_target so the IK
+    Set robotRightGripper -> targetConstraintFrame to iiwa_tool_frame so the IK
     solver will get it right
 """
-
 from __future__ import print_function
 
 from robot_prims.primitive_utils import *
@@ -21,11 +21,12 @@ from eyehand_calib.srv import *
 
 import numpy as np
 import math
+import yaml
 
 from datetime import datetime
 import os
 
-class EyeHandCalibrator(object):
+class TargetSweepExperiment(object):
     def __init__(self, config):
         self.config = config
 
@@ -37,60 +38,65 @@ class EyeHandCalibrator(object):
         self.listener = tf2_ros.TransformListener(self.tfBuffer)
         self.broadcaster = tf2_ros.TransformBroadcaster()
 
+        # Read motion config
+        self.config['motion'] = yaml.load_all(open(config["motion_config"])).next()
+
         rospy.sleep(1) # cheating
 
-    def collect_data(self, data_point, conf, cam_pose, world_pose):
-        # Nasty hack here:
-        conf.robotBase = conf["robotBase"]
-        conf.robotRightArm = conf["robotRightArm"]
-        conf.robotRightGripper = conf["robotRightGripper"]
-
-        proxy = rospy.ServiceProxy('/capture_data', Capture)
-        req = CaptureRequest(self.current_dir, data_point,
-            self.config['frame_count'], conf, cam_pose, world_pose)
-        resp = proxy(req)
-
-        if resp.captured_frames != self.config['frame_count']:
-            print("WARNING: Wrong number of frames captured!")
-
-    def run_test(self):
+    def prepare_data_collection(self):
         if self.config["collect_data"]:
             # create experiment directory
             date = datetime.utcnow()
             day_dir = date.strftime("%Y%m%d")
-            exp_dir = date.strftime("%Y%m%dT%H%M%S_eyehand")
+            exp_dir = date.strftime("%Y%m%dT%H%M%S_targetsweep")
             data_path = '/'.join([self.config["data_root"], day_dir, exp_dir])
 
             # Make sure the directory exists
             os.makedirs(data_path)
 
-        # Face the camera
-        angle = self.config['angle']
-        for cluster_num, head_pose in enumerate(self.head_poses()):
-            if self.config["collect_data"]:
-                # Create cluster directory
-                cluster_dir = '/'.join([data_path, str(cluster_num)])
-                os.makedirs(cluster_dir)
-                self.current_dir = cluster_dir
+    def collect_data(self):
+        if not self.config["collect_data"]: return
 
-            print("New head orientation: {}, {}".format(*head_pose))
-            self.move_head(head_pose)
+        # Not yet sure what this will need to do. Data collection is happening
+        # in LCM instead of ROS, so it may just do nothing
+        pass
 
-            dp = 0
-            for pos in self.viewspace_samples():
-                print("Moving to pose:", pos)
-                success, conf, cam_pose, target_pose = self.move_to_pose(pos, angle)
-                if success and self.config['collect_data']:
-                    try:
-                        print("Collecting data...")
-                        conf.robotHead = head_pose
-                        self.collect_data(dp, conf, cam_pose, target_pose)
-                        print("Success!")
-                        dp += 1
-                    except:
-                        print("Capture failed! Continuing anyway...")
+    def run_test(self):
+        # Set up data collection directory
+        self.prepare_data_collection()
 
+        confs = list()
+        direction = 1
+        for frame in self.config["motion"]["frames"]:
+            rot_x = frame["rotateX"] * math.pi / 180.0
+            y = frame["rotateY"]
+            tran_z = frame["translateZ"]
+            step_count = frame["numFrames"]
 
+            # All candidate z rotations.
+            # This is a shim for not constraining the IK properly
+            all_z = np.linspace(0, 2*math.pi, endpoint=False)
+
+            # Change direction with each pass
+            y_range = direction*np.linspace(y["min"], y["max"], num=step_count) * math.pi / 180.0
+            direction *= -1
+
+            for rot_y in y_range:
+                rospy.sleep(0.2)
+                for rot_z in all_z:
+                    pose_mat = self.computeCameraPose(rot_x, rot_y, rot_z, tran_z)
+
+                    # Now, get a matrix from the pose
+                    conf, err = obtainConfViaIK(self.robot_handle, pose_mat)
+                    if err != 1:
+                        print("IK Solved!", conf, sep='\n')
+                        confs.append(conf)
+                        break
+
+        if self.config['move_robot']:
+            for conf in confs:
+                sendRobotToConf(conf, 'move')
+                self.collect_data()
 
     def fuzz_target_pose(self, target_rpy):
         if not self.config['should_fuzz']: return [target_rpy]
@@ -100,6 +106,54 @@ class EyeHandCalibrator(object):
             fuzzed[2] += i
             result.append(fuzzed)
         return result
+
+    def computeCameraPose(self, rot_x, rot_y, rot_z, tran_z):
+        """
+        Returns the target pose of the camera for a specified view angle and distance
+
+        The strategy
+        ------------
+        1. Assumes look_at frame is known beforehand
+           * look_at is specified according to REP 103
+        2. Define intermediate frame: look_at_rot
+           * Rotation only
+           * Composition of two rotations:
+              1. Body to optical frame
+              2. View angle
+        3. Specify desired camera pose in the rotated frame
+        4. Transform camera pose into world frame
+
+        rot_x: tilt angle in radians
+        rot_y: pan angle in radians
+        rot_z: roll angle in radians
+        tran_z: distance of camera from object origin
+
+        Returns a PoseStamped in "world" frame with the current time stamp.
+        """
+        body_to_camera = transf.quaternion_from_euler(-math.pi / 2.0, math.pi / 2.0, 0, axes="rxyz")
+        view_angle = transf.quaternion_from_euler(rot_y, rot_x, rot_z, axes='ryxz')
+        quat = transf.quaternion_multiply(body_to_camera, view_angle)
+
+        # Define rotated frame (intermediate)
+        inter = create_pose_stamp_msg("inter", np.concatenate([[0,0,0], quat]))
+        broadcast_pose(self.tfBuffer, "look_at", "look_at_rot", inter, private=True)
+
+        # Define target camera pose
+        target = geometry_msgs.msg.PoseStamped()
+        target.header.stamp = rospy.Time.now()
+        target.header.frame_id = "look_at_rot"
+        target.pose.position.z = tran_z
+        target.pose.orientation.w = 1
+
+        # Transform camera pose into world frame for IK
+        xform = self.tfBuffer.lookup_transform("world", "look_at_rot", rospy.Time(0), rospy.Duration(0.1))
+        target_pose = do_transform_pose(target, xform)
+
+        # Show the resulting frame for debug
+        broadcast_pose(self.broadcaster, "world", "eyehand_1", target_pose)
+        target_mat = pose_stamp_to_tf(target_pose)
+
+        return target_mat
 
     def move_to_pose(self, target_xyz, target_rpy):
         """
@@ -130,7 +184,7 @@ class EyeHandCalibrator(object):
             broadcast_pose(self.broadcaster, "world", "eyehand_2", target_pose)
 
             target_mat = pose_stamp_to_tf(target_pose)
-            print ("Target mat", target_mat, sep='\n')
+            # print ("Target mat", target_mat, sep='\n')
 
             # Now, get a matrix from the pose
             conf, err = obtainConfViaIK(self.robot_handle, target_mat)
@@ -190,8 +244,6 @@ class EyeHandCalibrator(object):
                     if dist < kuka_reach:
                         rospy.sleep(1)
                         yield p
-                    else:
-                        print("Out of reach: {}, {}, {}".format(x, y, z))
 
     def head_poses(self):
         pans = np.linspace(self.config["pan_low"], self.config["pan_high"], num=self.config["pan_count"])
@@ -201,7 +253,7 @@ class EyeHandCalibrator(object):
                 yield [pan, tilt]
 
 
-def broadcast(broadcaster, parent, child, xyz, angle, euler=True):
+def broadcast(b, parent, child, xyz, angle, euler=True, private=False):
     t = geometry_msgs.msg.TransformStamped()
     t.header.stamp = rospy.Time.now()
     t.header.frame_id = parent
@@ -214,12 +266,18 @@ def broadcast(broadcaster, parent, child, xyz, angle, euler=True):
     t.transform.rotation.y = q[1]
     t.transform.rotation.z = q[2]
     t.transform.rotation.w = q[3]
-    broadcaster.sendTransform(t)
 
-def broadcast_pose(broadcaster, parent, child, pose):
+    if private:
+        print("Sending transform {} -> {}: Private".format(parent, child))
+        b.set_transform(t, "PRIVATE")
+    else:
+        print("Sending transform {} -> {}: Public".format(parent, child))
+        b.sendTransform(t)
+
+def broadcast_pose(broadcaster, parent, child, pose, private=False):
     p = pose.pose.position
     q = pose.pose.orientation
-    broadcast(broadcaster, parent, child, [p.x, p.y, p.z], [q.x, q.y, q.z, q.w], euler=False)
+    broadcast(broadcaster, parent, child, [p.x, p.y, p.z], [q.x, q.y, q.z, q.w], euler=False, private=private)
 
 # Random notes from earlier days...
 # Camera at [0, 0]
@@ -241,30 +299,21 @@ def main():
         "collect_data": False,
         "move_robot": True,
         "should_fuzz": True,
+        "motion_config": "/home/momap/spartan/src/CorlDev/config/data_collection.yaml",
 
         # Optical frame
-        "optical_frame": "kinect1_rgb_optical_frame",
-        "angle": [0, -math.pi, 0],
-        "kuka_reach_frame": "iiwa_link_0",
+        "look_at_frame": "target_sweep_look_at_frame",
 
-        # Head pose selection
-        "pan_low": 0.0,
-        "pan_high": 0.5,
-        "pan_count": 1,
-        "tilt_low": -0.6,
-        "tilt_high": -0.7,
-        "tilt_count":   1,
-
-        # Target pattern
+        # Sweep pattern
         "kuka_reach": 1.2,
-        "near_fov": 0.9,
+        "near_fov": 0.6,
         "far_fov": 0.9,
-        "horiz_angle": 00.0 * math.pi / 180.0,
-        "vert_angle": 00.0 * math.pi / 180.0,
-        "grid_size": 1
+        "horiz_angle": 40.0 * math.pi / 180.0,
+        "vert_angle": 25.0 * math.pi / 180.0,
+        "grid_size": 4
     }
 
-    tester = EyeHandCalibrator(config)
+    tester = TargetSweepExperiment(config)
     # angle = [0, -math.pi / 2.0, 0]
     # pos =  [1.0, 0.60, -0.00]
     # tester.move_head([0, 0])
