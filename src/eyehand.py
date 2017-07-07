@@ -58,7 +58,7 @@ class EyeHandCalibrator(object):
             # create experiment directory
             date = datetime.utcnow()
             day_dir = date.strftime("%Y%m%d")
-            exp_dir = date.strftime("%Y%m%dT%H%M%S_eyehand")
+            exp_dir = date.strftime("%Y%m%dT%H%M%S_"+self.config["experiment_suffix"])
             data_path = '/'.join([self.config["data_root"], day_dir, exp_dir])
 
             # Make sure the directory exists
@@ -244,6 +244,7 @@ def main():
     config = {
         # Test parametes
         "data_root": "/home/momap/momap_data",
+        "experiment_suffix": "eyehand",
         "frame_count": 10,
         "collect_data": False,
         "move_robot": True,
