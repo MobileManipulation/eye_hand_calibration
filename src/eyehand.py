@@ -66,6 +66,7 @@ class EyeHandCalibrator(object):
 
         # Face the camera
         angle = self.config['angle']
+        sample_num = -1
         for cluster_num, head_pose in enumerate(self.head_poses()):
             if self.config["collect_data"]:
                 # Create cluster directory
@@ -79,7 +80,16 @@ class EyeHandCalibrator(object):
             dp = 0
             for pos in self.viewspace_samples():
                 print("Moving to pose:", pos)
-                success, conf, cam_pose, target_pose = self.move_to_pose(pos, angle)
+                success, conf, cam_pose, target_pose = self.solve_ik(pos, angle)
+
+                # Only measure every 5th reachable location
+                if success: sample_num += 1
+                if sample_num % 5 != 0: continue
+
+                # Actually move
+                if success and self.config['move_robot']:
+                    sendRobotToConf(conf, 'move')
+
                 if success and self.config['collect_data']:
                     try:
                         print("Collecting data...")
@@ -101,7 +111,7 @@ class EyeHandCalibrator(object):
             result.append(fuzzed)
         return result
 
-    def move_to_pose(self, target_xyz, target_rpy):
+    def solve_ik(self, target_xyz, target_rpy):
         """
         Move calibration plate to specified position. target given in camera coordinates.
         """
@@ -137,9 +147,6 @@ class EyeHandCalibrator(object):
             if err != 1:
                 continue
             print("IK Solved!", conf, sep='\n')
-
-            if self.config['move_robot']:
-                sendRobotToConf(conf, 'move')
 
             return True, conf, cam_pose, target_pose
         print("IK failed")
