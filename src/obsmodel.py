@@ -11,13 +11,17 @@ Prereqs:
 """
 from __future__ import print_function
 
-from robot_prims.primitive_utils import *
+#from robot_prims.primitive_utils import *
 from perception_interfaces.utils.transform_helper import *
 
 import rospy
 import tf2_ros
 from tf2_geometry_msgs import PoseStamped, do_transform_pose
 from eyehand_calib.srv import *
+from robot_msgs.srv import *
+
+import pydrake
+from pydrake.solvers import ik
 
 import numpy as np
 import math
@@ -29,19 +33,45 @@ import os
 class TargetSweepExperiment(object):
     def __init__(self, config):
         self.config = config
+        self.count = 0
 
         # Initialize robot
-        self.robot_handle = create_robot_handle()
+        # This is a hack to get named access to URDF parts
+        robot = pydrake.rbtree.RigidBodyTree(config["urdf"])
+        bodies = dict()
+        for body in range(robot.get_num_bodies()):
+            body_name = robot.getBodyOrFrameName(body)
+            bodies[body_name] = body
+        robot.bodies = bodies
+        self.robot = robot
 
         # Initialize TF2
         self.tfBuffer = tf2_ros.Buffer()
         self.listener = tf2_ros.TransformListener(self.tfBuffer)
         self.broadcaster = tf2_ros.TransformBroadcaster()
 
+        # Set up services to move robot
+        rospy.wait_for_service('/robot_server/getRobotConf')
+        rospy.wait_for_service('/robot_control/GoToConf')
+        self.conf_service = rospy.ServiceProxy('/robot_server/getRobotConf', GetRobotConf)
+        self.go_to_service = rospy.ServiceProxy('/robot_control/GoToConf', GoToConf)
+
+
         # Read motion config
         self.config['motion'] = yaml.load_all(open(config["motion_config"])).next()
 
         rospy.sleep(1) # cheating
+
+    def moveArm(self,conf, duration=7.0):
+        # Get current robot configuration
+        robotConf = self.conf_service().conf
+
+        # Update to desired pose
+        robotConf.robotRightArm = conf
+
+        # Send robot to pose
+        resp = self.go_to_service(GoToConfRequest(robotConf, duration))
+        return np.array(resp.conf.robotRightArm)
 
     def prepare_data_collection(self):
         if self.config["collect_data"]:
@@ -73,30 +103,64 @@ class TargetSweepExperiment(object):
             tran_z = frame["translateZ"]
             step_count = frame["numFrames"]
 
-            # All candidate z rotations.
-            # This is a shim for not constraining the IK properly
-            all_z = np.linspace(0, 2*math.pi, endpoint=False)
-
             # Change direction with each pass
             y_range = direction*np.linspace(y["min"], y["max"], num=step_count) * math.pi / 180.0
             direction *= -1
 
+            # Generate list of target poses
+            pose_mats = list()
             for rot_y in y_range:
-                rospy.sleep(0.2)
-                for rot_z in all_z:
-                    pose_mat = self.computeCameraPose(rot_x, rot_y, rot_z, tran_z)
+                rot_z = 0.0
+                pose_mats.append(self.computeCameraPose(rot_x, rot_y, rot_z, tran_z))
 
-                    # Now, get a matrix from the pose
-                    conf, err = obtainConfViaIK(self.robot_handle, pose_mat)
-                    if err != 1:
-                        print("IK Solved!", conf, sep='\n')
-                        confs.append(conf)
-                        break
+                # Slow down for debugging
+                rospy.sleep(0.2)
+
+            # Solve IK
+            for pose_mat in pose_mats:
+                conf, success = self.runIK(pose_mat)
+                if success:
+                    print("IK Solved!", conf, sep='\n')
+                    confs.append(conf)
+                else:
+                    print ("Infeasible pose: ({}, {}, {}, {})".format(rot_x, rot_y, rot_z, tran_z))
 
         if self.config['move_robot']:
             for conf in confs:
-                sendRobotToConf(conf, 'move')
+                self.moveArm(conf)
                 self.collect_data()
+
+    def runIK(self, pose_mat):
+        # Set up constraints
+        constraints = list()
+
+        xyz = transf.translation_from_matrix(pose_mat)
+        pos_delta = self.config["pose_delta"]
+        constraints.append( ik.WorldPositionConstraint( self.robot,
+            self.robot.bodies["iiwa_tool_frame"], # Frame of reference
+            np.array([0.0, 0.0, 0.0]), # Point to constrain (in frame of reference)
+            xyz - pos_delta,  # Lower bound
+            xyz + pos_delta   # Upper bound
+        ))
+
+        rpy = np.array(transf.euler_from_matrix(pose_mat))
+        quat_tol = self.config["quat_tol"]
+        constraints.append( ik.WorldEulerConstraint( self.robot,
+            self.robot.bodies["iiwa_tool_frame"], # Frame of reference
+            rpy - quat_tol, # Lower bound
+            rpy + quat_tol  # Upper bound
+        ))
+
+        # Run the IK
+        q_seed = self.robot.getZeroConfiguration()
+        options = ik.IKoptions(self.robot)
+
+        result = ik.InverseKin(self.robot, q_seed, q_seed, constraints, options)
+
+        if result.info[0] == 1:
+            return result.q_sol[0][2:], True
+        else:
+            return [], False
 
     def fuzz_target_pose(self, target_rpy):
         if not self.config['should_fuzz']: return [target_rpy]
@@ -130,19 +194,32 @@ class TargetSweepExperiment(object):
 
         Returns a PoseStamped in "world" frame with the current time stamp.
         """
-        body_to_camera = transf.quaternion_from_euler(-math.pi / 2.0, math.pi / 2.0, 0, axes="rxyz")
-        view_angle = transf.quaternion_from_euler(rot_y, rot_x, rot_z, axes='ryxz')
-        quat = transf.quaternion_multiply(body_to_camera, view_angle)
+        # Define frame to look at
+        look_at = np.concatenate([
+            self.config["look_at_frame"][:3],
+            transf.quaternion_from_euler(*self.config["look_at_frame"][3:])
+        ])
+        time = rospy.Time.now()
+        temp = create_pose_stamp_msg("look_at", look_at)
+        broadcast_pose(self.tfBuffer, "world", "look_at", temp, time, private=True)
 
         # Define rotated frame (intermediate)
-        inter = create_pose_stamp_msg("inter", np.concatenate([[0,0,0], quat]))
-        broadcast_pose(self.tfBuffer, "look_at", "look_at_rot", inter, private=True)
+        body_to_camera = transf.quaternion_from_euler(-math.pi / 2.0, math.pi / 2.0, 0, axes="rxyz")
+        #view_angle = transf.quaternion_from_euler(rot_y, rot_x, rot_z, axes='ryxz')
+        #quat = transf.quaternion_multiply(body_to_camera, view_angle)
+
+        # Testing something here
+        view_angle = transf.quaternion_from_euler(rot_y, -rot_x, rot_z, axes='rzyx')
+
+        inter = create_pose_stamp_msg("inter", np.concatenate([[0,0,0], view_angle]))
+        broadcast_pose(self.tfBuffer, "look_at", "look_at_rot", inter, time, private=True)
 
         # Define target camera pose
         target = geometry_msgs.msg.PoseStamped()
-        target.header.stamp = rospy.Time.now()
+        target.header.stamp = time
         target.header.frame_id = "look_at_rot"
-        target.pose.position.z = tran_z
+        #target.pose.position.z = tran_z
+        target.pose.position.x = tran_z
         target.pose.orientation.w = 1
 
         # Transform camera pose into world frame for IK
@@ -150,112 +227,15 @@ class TargetSweepExperiment(object):
         target_pose = do_transform_pose(target, xform)
 
         # Show the resulting frame for debug
-        broadcast_pose(self.broadcaster, "world", "eyehand_1", target_pose)
+        broadcast_pose(self.broadcaster, "world", "eyehand_{}".format(self.count), target_pose, rospy.Time.now())
+        self.count += 1
         target_mat = pose_stamp_to_tf(target_pose)
 
         return target_mat
 
-    def move_to_pose(self, target_xyz, target_rpy):
-        """
-        Move calibration plate to specified position. target given in camera coordinates.
-        """
-        optical_frame = self.config["optical_frame"]
-
-        # Generate fuzzed positions
-        fuzz = self.fuzz_target_pose(target_rpy)
-        print(fuzz)
-
-        attempts = 0
-        for fuzz_rpy in fuzz:
-            attempts += 1
-            print("Attempt", attempts)
-
-            # Convert to quaternion
-            target_quat = transf.quaternion_from_euler(*fuzz_rpy, axes='sxyz')
-            cam_pose = create_pose_stamp_msg("cam_pose", np.concatenate([target_xyz, target_quat]))
-            broadcast_pose(self.broadcaster, optical_frame, "eyehand_1", cam_pose)
-
-            # Transform camera frame pose to IK frame (world, according to Jay)
-            xform = self.tfBuffer.lookup_transform("world", optical_frame, rospy.Time.now(), rospy.Duration(1.0))
-            target_pose = do_transform_pose(cam_pose, xform)
-
-            # print("Cam pose:", cam_pose, sep='\n')
-            # print("Target pose:", target_pose, sep='\n')
-            broadcast_pose(self.broadcaster, "world", "eyehand_2", target_pose)
-
-            target_mat = pose_stamp_to_tf(target_pose)
-            # print ("Target mat", target_mat, sep='\n')
-
-            # Now, get a matrix from the pose
-            conf, err = obtainConfViaIK(self.robot_handle, target_mat)
-            if err != 1:
-                continue
-            print("IK Solved!", conf, sep='\n')
-
-            if self.config['move_robot']:
-                sendRobotToConf(conf, 'move')
-
-            return True, conf, cam_pose, target_pose
-        print("IK failed")
-        return False, {}, None, None
-
-    def move_head(self, head_pose):
-        sendRobotToConf({'robotHead': head_pose}, 'look', duration=5.0)
-
-    def viewspace_samples(self):
-        """
-        Expected ranges:
-            pan: -0.5 -> 0.5 (right to left)
-            tilt: 0 -> -0.7 (straight to down)
-        """
-        # params
-        kuka_reach = self.config["kuka_reach"]
-        near_fov = self.config["near_fov"]
-        far_fov = self.config["far_fov"]
-        horiz_angle = self.config["horiz_angle"]
-        vert_angle = self.config["vert_angle"]
-        grid_size = self.config["grid_size"]
-        optical_frame = self.config["optical_frame"]
-
-        # Compute corners of bounding rect
-
-        # Near-top-right
-        p1x = near_fov*math.tan(horiz_angle / 2.0)
-        p1y = -near_fov*math.tan(vert_angle / 2.0)
-        p1z = near_fov
-        print ("Bounds:", p1x, p1y, p1z)
-
-        # Far-bottom-left
-        p2x = -p1x
-        p2y = -p1y
-        p2z = far_fov
-
-        # Get Kuka base link in camera coords
-        xform = self.tfBuffer.lookup_transform(optical_frame, "iiwa_link_0", rospy.Time.now(), rospy.Duration(1.0))
-        t = xform.transform.translation
-        kuka_base = np.array([t.x, t.y, t.z])
-        print("Kuka base pose:", kuka_base)
-
-        for x in np.linspace(p1x, p2x, num=grid_size):
-            for y in np.linspace(p1y, p2y, num=grid_size):
-                for z in np.linspace(p1z, p2z, num=grid_size):
-                    p = np.array([x, y, z])
-                    dist = np.linalg.norm(p - kuka_base)
-                    if dist < kuka_reach:
-                        rospy.sleep(1)
-                        yield p
-
-    def head_poses(self):
-        pans = np.linspace(self.config["pan_low"], self.config["pan_high"], num=self.config["pan_count"])
-        tilts = np.linspace(self.config["tilt_low"], self.config["tilt_high"], num=self.config["tilt_count"])
-        for pan in pans:
-            for tilt in tilts:
-                yield [pan, tilt]
-
-
-def broadcast(b, parent, child, xyz, angle, euler=True, private=False):
+def broadcast(b, parent, child, xyz, angle, time, euler=True, private=False, ):
     t = geometry_msgs.msg.TransformStamped()
-    t.header.stamp = rospy.Time.now()
+    t.header.stamp = time
     t.header.frame_id = parent
     t.child_frame_id = child
     t.transform.translation.x = xyz[0]
@@ -268,16 +248,16 @@ def broadcast(b, parent, child, xyz, angle, euler=True, private=False):
     t.transform.rotation.w = q[3]
 
     if private:
-        print("Sending transform {} -> {}: Private".format(parent, child))
+        #print("Sending transform {} -> {}: Private".format(parent, child))
         b.set_transform(t, "PRIVATE")
     else:
-        print("Sending transform {} -> {}: Public".format(parent, child))
+        #print("Sending transform {} -> {}: Public".format(parent, child))
         b.sendTransform(t)
 
-def broadcast_pose(broadcaster, parent, child, pose, private=False):
+def broadcast_pose(broadcaster, parent, child, pose, time, private=False):
     p = pose.pose.position
     q = pose.pose.orientation
-    broadcast(broadcaster, parent, child, [p.x, p.y, p.z], [q.x, q.y, q.z, q.w], euler=False, private=private)
+    broadcast(broadcaster, parent, child, [p.x, p.y, p.z], [q.x, q.y, q.z, q.w], time, euler=False, private=private)
 
 # Random notes from earlier days...
 # Camera at [0, 0]
@@ -291,7 +271,6 @@ def main():
     rospy.init_node('eyehand_calib')
 
     # Generate full directory name
-
     config = {
         # Test parametes
         "data_root": "/home/momap/momap_data",
@@ -300,9 +279,14 @@ def main():
         "move_robot": True,
         "should_fuzz": True,
         "motion_config": "/home/momap/spartan/src/CorlDev/config/data_collection.yaml",
+        "urdf": "/home/momap/momap/src/robot_core/robot_descriptions/robot_description/urdf/draper_ptu_gripper.urdf",
 
-        # Optical frame
-        "look_at_frame": "target_sweep_look_at_frame",
+        # Where are we circling?
+        "look_at_frame": [1.0,0,0.75,0,0,0],     # [x,y,z,r,p,y] from world
+
+        # IK parameters
+        "pose_delta": 0.001,
+        "quat_tol": 0.001,
 
         # Sweep pattern
         "kuka_reach": 1.2,

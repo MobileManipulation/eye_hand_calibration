@@ -9,11 +9,11 @@ import tf.transformations as transf
 
 path = "/home/momap/momap/src/robot_core/robot_descriptions/robot_description/urdf"
 urdf_in = "draper_ptu_gripper-eyehand1c.urdf"
-urdf_out = "draper_ptu_gripper-eyehand2.urdf"
-shouldWrite = False
+urdf_out = "draper_ptu_gripper-eyehand3.urdf"
+shouldWrite = True
 
 data_path = "/home/momap/momap_data/log_robot/20170630/20170630T155606_eyehand"
-data_in = "calibration_result.txt"
+data_in = "Calibration_2017-07-06T1648_UNIX.txt"
 
 # Joint names
 joint_names = [

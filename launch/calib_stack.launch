@@ -16,6 +16,7 @@
       <remap from="state" to="/ptu_joint_states" />
     </node> -->
 
+<!--
     <node name="time_manager" pkg="robot_server" type="manage_system.sh" respawn="true"/>
     <node name="gripper_server" pkg="robot_control" type="gripper_server.py" respawn="true"/>
 -->
