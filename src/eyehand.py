@@ -24,6 +24,7 @@ import numpy as np
 import math
 
 from datetime import datetime
+from itertools import izip, tee
 import os
 
 class EyeHandCalibrator(object):
@@ -59,6 +60,8 @@ class EyeHandCalibrator(object):
         rospy.wait_for_service('/robot_server/getRobotConf')
         print "Waiting for GoToConf service..."
         rospy.wait_for_service('/robot_control/GoToConf')
+        print "ROS stack ready!"
+        print
 
         self.conf_service = rospy.ServiceProxy('/robot_server/getRobotConf', GetRobotConf)
         self.go_to_service = rospy.ServiceProxy('/robot_control/GoToConf', GoToConf)
@@ -79,6 +82,28 @@ class EyeHandCalibrator(object):
         if resp.captured_frames != self.config['frame_count']:
             print "WARNING: Wrong number of frames captured!"
 
+    def getAllPoses(self):
+        if self.config["load_ik"]:
+            try:
+                return self.loadPoses()
+            except:
+                print "Loading poses failed!"
+                print
+        return self.computePoses()
+
+    def loadPoses(self):
+        filename = self.config["ik_load_path"]
+        print "Loading poses from {}".format(filename)
+
+        all_poses = list()
+        with open(filename, "r") as fp:
+            data = np.loadtxt(fp, delimiter=",")
+            for pose in data:
+                all_poses.append((pose[0:2], pose[2:]))
+            print "Loaded {} poses!".format(len(all_poses))
+            print
+        return all_poses
+
     def computePoses(self):
         # Precompute poses
         head_poses = self.computeHeadPoses()
@@ -86,6 +111,14 @@ class EyeHandCalibrator(object):
         print "Total head poses:", len(head_poses)
         print "Total plate poses:", len(plate_poses)
         print
+
+        if self.config["save_ik"]:
+            filename = self.config["ik_save_path"]
+            print "IK save path: {}".format(filename)
+            if os.path.isfile(filename):
+                self.config["save_ik"] = False
+                print "WARNING! IK save path already exists. IK saving disabled"
+                print
 
         print "Performing IK..."
         # Solve all the IK
@@ -126,15 +159,14 @@ class EyeHandCalibrator(object):
                     self.config['gaze_dir_tol']                          # Cone tolerance in radians
                 ))
 
-                # Perhaps add collision constraints here?
-                # TODO: MinDistanceConstraint needed for sure
+                # Avoid self-collision
                 constraints.append( ik.MinDistanceConstraint ( self.robot,
                     self.config['collision_min_distance'],   # Minimum distance between bodies
                     list(),                                  # Active bodies (empty set means all bodies)
                     set()                                    # Active collision groups (not filter groups! Empty set means all)
                 ))
 
-                # NOTE: Possibly a global position constraint to keep the arm off the ground
+                # Keep the arm off the ground
                 constraints.append( ik.WorldPositionConstraint ( self.robot,
                     self.bodies["calibration_target"],                      # Body to constrain
                     np.array([0, 0, 0]),                                    # Point on body
@@ -151,13 +183,12 @@ class EyeHandCalibrator(object):
 
                 if result.info[0] != 1:
                     pass
-                    # print "Bad result! info = {}".format(result.info[0])
-                    # print "head_pose:",head_pose
-                    # print "plate_pose:", plate_pose
                 else:
                     # Tuple: head_pose, arm_pose
                     all_poses.append((result.q_sol[0][0:2],result.q_sol[0][2:]))
-                    # print "Success!"
+                    if self.config["save_ik"]:
+                        with open(self.config["ik_save_path"],'a') as fp:
+                            np.savetxt(fp, result.q_sol[0][None, :], delimiter=',')
 
             # Show status info after every head pose
             attempted = (i+1) * len(plate_poses)
@@ -167,6 +198,135 @@ class EyeHandCalibrator(object):
             print "[{:>3d}%] {}/{} solutions found".format(completion, success, attempted)
 
         return all_poses
+
+    def computeHeadPoses(self):
+        pans = np.linspace(self.config["pan_low"], self.config["pan_high"], num=self.config["pan_count"])
+        tilts = np.linspace(self.config["tilt_low"], self.config["tilt_high"], num=self.config["tilt_count"])
+
+        head_poses = list()
+        for pan in pans:
+            for tilt in tilts:
+                head_poses.append(np.array([pan, tilt], dtype=np.float64).reshape(2, 1))
+        return head_poses
+
+    def computePlatePoses(self):
+        # params
+        near_fov = self.config["near_fov"]
+        far_fov = self.config["far_fov"]
+        horiz_angle = self.config["horiz_angle"]
+        vert_angle = self.config["vert_angle"]
+        grid_size = self.config["grid_size"]
+
+        # Compute corners of bounding rect
+        # Near-top-left
+        p1x = -near_fov*math.tan(horiz_angle / 2.0)
+        p1y = -near_fov*math.tan(vert_angle / 2.0)
+        p1z = near_fov
+        print  "Inner bounds:", p1x, p1y, p1z
+
+        # Far-bottom-right
+        p2x = -p1x
+        p2y = -p1y
+        p2z = far_fov
+        print  "Outer bounds:", p2x, p2y, p2z
+
+        plate_poses = list()
+        for x in np.linspace(p1x, p2x, num=grid_size):
+            for y in np.linspace(p1y, p2y, num=grid_size):
+                for z in np.linspace(p1z, p2z, num=grid_size):
+                    plate_poses.append(np.array([x, y, z], dtype=np.float64).reshape(3, 1))
+        return plate_poses
+
+    def computeTrajectories(self, all_poses):
+        def pairwise(it):
+            "s -> (s0, s1), (s1, s2), ..."
+            a, b = tee(it)
+            next(b, None)
+            return izip(a, b)
+
+        # First, get current pose and prepend all_poses
+        init_conf = self.conf_service().conf
+        init_head = np.array(init_conf.robotHead)
+        init_arm = np.array(init_conf.robotRightArm)
+        print "Current robot configuration:"
+        print "\thead:", init_head
+        print "\tarm: ", init_arm
+        print
+
+        print "Computing safe trajectories..."
+        poses = [(init_head, init_arm)] + all_poses # Intentional copy
+        for i, (start, end) in enumerate(pairwise(poses)):
+            print "Trajectory {}/{}".format(i+1, len(poses)-1)
+            print start
+            print end
+
+            joints = np.array([
+                self.positions['ptu_pan'],
+                self.positions['ptu_tilt'],
+                self.positions['iiwa_joint_1'],
+                self.positions['iiwa_joint_2'],
+                self.positions['iiwa_joint_3'],
+                self.positions['iiwa_joint_4'],
+                self.positions['iiwa_joint_5'],
+                self.positions['iiwa_joint_6'],
+                self.positions['iiwa_joint_7']
+            ], dtype=np.int32).reshape(9, 1)
+
+            constraints = list()
+            # Constrain the start position
+            start_pose = np.concatenate(start).reshape(9, 1)
+            start_constraint = ik.PostureConstraint( self.robot,
+                np.array([0.0, 0.0]).reshape([2,1])    # Active time
+            )
+            start_constraint.setJointLimits(
+                joints,
+                start_pose - self.config['pose_tol'],
+                start_pose + self.config['pose_tol']
+            )
+            constraints.append(start_constraint)
+
+            # Constrain the end position
+            end_pose = np.concatenate(end).reshape(9, 1)
+            end_constraint = ik.PostureConstraint( self.robot,
+                np.array([10.0, 10.0]).reshape([2,1])    # Active time
+            )
+            end_constraint.setJointLimits(
+                joints,
+                end_pose - self.config['pose_tol'],
+                end_pose + self.config['pose_tol']
+            )
+            constraints.append(end_constraint)
+
+            # Constrain against collisions
+            constraints.append( ik.MinDistanceConstraint ( self.robot,
+                self.config['collision_min_distance'],   # Minimum distance between bodies
+                list(),                                  # Active bodies (empty set means all bodies)
+                set()                                    # Active collision groups (not filter groups! Empty set means all)
+            ))
+
+            # Constrain against hitting the ground
+            constraints.append( ik.WorldPositionConstraint ( self.robot,
+                self.bodies["calibration_target"],                      # Body to constrain
+                np.array([0, 0, 0]),                                    # Point on body
+                np.array([np.nan, np.nan, self.config['min_height']]),  # Lower bound. Nan is don't care
+                np.array([np.nan, np.nan, np.nan])                      # Upper bound. Nan is don't care
+            ))
+
+            # Prepare times of interest for trajectory solve
+            times = np.linspace(0, 10, num=self.config['trajectory_count'], endpoint=True)
+
+            # Solve the IK problem
+            q_seed = np.zeros([9, self.config['trajectory_count']]) # Zero seed for now
+            options = ik.IKoptions(self.robot)
+            options.setMajorIterationsLimit(400)
+            options.setFixInitialState(False)
+            print "Iterations limit:", options.getMajorIterationsLimit()
+            result = ik.InverseKinTraj(self.robot, times, q_seed, q_seed, constraints, options)
+
+            print "Results:", result.info
+            print "q_sol:", result.q_sol
+
+        print
 
     def run_test(self):
         """
@@ -201,10 +361,11 @@ class EyeHandCalibrator(object):
             # Make sure the directory exists
             os.makedirs(data_path)
 
-        # Determine robot positions
-        all_poses = self.computePoses()
+        all_poses = self.getAllPoses()
 
-        # Loop over valid configurations
+        #trajectories = self.computeTrajectories(all_poses)
+
+        # Loop over valid poses
         for i, (head_pose, arm_pose) in enumerate(all_poses):
             # Move robot to configuration
             print "Moving to pose {}/{}".format(i+1, len(all_poses))
@@ -235,44 +396,6 @@ class EyeHandCalibrator(object):
         resp = self.go_to_service(GoToConfRequest(robotConf, 0.0))
         return np.concatenate([resp.conf.robotHead, resp.conf.robotRightArm])
 
-    def computePlatePoses(self):
-        # params
-        near_fov = self.config["near_fov"]
-        far_fov = self.config["far_fov"]
-        horiz_angle = self.config["horiz_angle"]
-        vert_angle = self.config["vert_angle"]
-        grid_size = self.config["grid_size"]
-
-        # Compute corners of bounding rect
-        # Near-top-left
-        p1x = -near_fov*math.tan(horiz_angle / 2.0)
-        p1y = -near_fov*math.tan(vert_angle / 2.0)
-        p1z = near_fov
-        print  "Inner bounds:", p1x, p1y, p1z
-
-        # Far-bottom-right
-        p2x = -p1x
-        p2y = -p1y
-        p2z = far_fov
-        print  "Outer bounds:", p2x, p2y, p2z
-
-        plate_poses = list()
-        for x in np.linspace(p1x, p2x, num=grid_size):
-            for y in np.linspace(p1y, p2y, num=grid_size):
-                for z in np.linspace(p1z, p2z, num=grid_size):
-                    plate_poses.append(np.array([x, y, z], dtype=np.float64).reshape(3, 1))
-        return plate_poses
-
-    def computeHeadPoses(self):
-        pans = np.linspace(self.config["pan_low"], self.config["pan_high"], num=self.config["pan_count"])
-        tilts = np.linspace(self.config["tilt_low"], self.config["tilt_high"], num=self.config["tilt_count"])
-
-        head_poses = list()
-        for pan in pans:
-            for tilt in tilts:
-                head_poses.append(np.array([pan, tilt], dtype=np.float64).reshape(2, 1))
-        return head_poses
-
 
 def main():
     # Initialize ROS node
@@ -282,8 +405,8 @@ def main():
         # Test control
         "collect_data": False,
         "move_robot": True,
-        "save_ik": True,
-        "load_ik": False,
+        "save_ik": False,
+        "load_ik": True,
 
         # Data collection
         "data_root": "/home/momap/momap_data",
@@ -295,30 +418,32 @@ def main():
         "optical_frame": "kinect1_rgb_optical_frame",
 
         # IK persistence
-        "ik_save_path": "",
-        "ik_load_path": "",
+        "ik_save_path": "test_ik.save",
+        "ik_load_path": "test_ik.save",
 
         # Inverse kinematics
         "head_pose_tol": 0.001,
         "arm_pos_tol": 0.01,
         "gaze_dir_tol": 0.01,
+        "pose_tol": 0.001,
         "collision_min_distance": 0.01,
         "min_height": 0.30,
+        "trajectory_count": 30,
 
         # Head pose selection
         "pan_low": 0.0,
         "pan_high": 0.5,
-        "pan_count": 3,
+        "pan_count": 2,
         "tilt_low": 0.0,
         "tilt_high": -0.5,
-        "tilt_count":   3,
+        "tilt_count":   2,
 
         # Plate pose selection
         "near_fov": 0.6,
         "far_fov": 1.2,
         "horiz_angle": 40.0 * math.pi / 180.0,
         "vert_angle": 30.0 * math.pi / 180.0,
-        "grid_size": 5
+        "grid_size": 2
     }
 
     tester = EyeHandCalibrator(config)
