@@ -3,21 +3,22 @@
 """
 Automated data collection script for Kuka eye-hand calibration with the Kinect.
 
+This script requires Spartan Drake.
+
 Prereqs:
 * iiwa_calibration.yaml:
     Set robotRightGripper -> targetConstraintFrame to calibration_target so the IK
     solver will get it right
 """
 
-from __future__ import print_function
-
-from robot_prims.primitive_utils import *
-from perception_interfaces.utils.transform_helper import *
-
+# For robot motion
 import rospy
-import tf2_ros
-from tf2_geometry_msgs import PoseStamped, do_transform_pose
 from eyehand_calib.srv import *
+from robot_msgs.srv import *
+
+# For IK
+import pydrake
+from pydrake.solvers import ik
 
 import numpy as np
 import math
@@ -30,12 +31,37 @@ class EyeHandCalibrator(object):
         self.config = config
 
         # Initialize robot
-        self.robot_handle = create_robot_handle()
+        print "Loading URDF..."
+        self.robot = pydrake.rbtree.RigidBodyTree(self.config["ik_urdf"])
+        print
 
-        # Initialize TF2
-        self.tfBuffer = tf2_ros.Buffer()
-        self.listener = tf2_ros.TransformListener(self.tfBuffer)
-        self.broadcaster = tf2_ros.TransformBroadcaster()
+        print "Bodies"
+        print "------"
+        self.bodies = dict()
+        for body in range(self.robot.get_num_bodies()):
+            body_name = self.robot.getBodyOrFrameName(body)
+            print body_name, body
+            self.bodies[body_name] = body
+        # if robot.get_num_bodies() == 0: print "No bodies"
+        print
+
+        self.positions = dict()
+        print "Positions"
+        print "---------"
+        for position in range(self.robot.get_num_positions()):
+            position_name = self.robot.get_position_name(position)
+            print position_name, position
+            self.positions[position_name] = position
+        # if robot.get_num_positions() == 0: print "No positions"
+        print
+
+        print "Waiting for getRobotConf service..."
+        rospy.wait_for_service('/robot_server/getRobotConf')
+        print "Waiting for GoToConf service..."
+        rospy.wait_for_service('/robot_control/GoToConf')
+
+        self.conf_service = rospy.ServiceProxy('/robot_server/getRobotConf', GetRobotConf)
+        self.go_to_service = rospy.ServiceProxy('/robot_control/GoToConf', GoToConf)
 
         rospy.sleep(1) # cheating
 
@@ -51,9 +77,117 @@ class EyeHandCalibrator(object):
         resp = proxy(req)
 
         if resp.captured_frames != self.config['frame_count']:
-            print("WARNING: Wrong number of frames captured!")
+            print "WARNING: Wrong number of frames captured!"
+
+    def computePoses(self):
+        # Precompute poses
+        head_poses = self.computeHeadPoses()
+        plate_poses = self.computePlatePoses()
+        print "Total head poses:", len(head_poses)
+        print "Total plate poses:", len(plate_poses)
+        print
+
+        print "Performing IK..."
+        # Solve all the IK
+        all_poses = list()
+        for i, head_pose in enumerate(head_poses):
+            for plate_pose in plate_poses:
+                # Generate constraints and solve IK
+                constraints = list()
+
+                # Constrain the head pose
+                head_constraint = ik.PostureConstraint( self.robot )
+                head_constraint.setJointLimits(
+                    np.array([self.positions['ptu_pan'], self.positions['ptu_tilt']], dtype=np.int32).reshape(2, 1),
+                    head_pose - self.config['head_pose_tol'],
+                    head_pose + self.config['head_pose_tol']
+                )
+                constraints.append(head_constraint)
+
+                # Set the calibration plate position
+                constraints.append( ik.RelativePositionConstraint ( self.robot,
+                    np.zeros([3,1]),                                                    # Point relative to Body A (calibration target)
+                    plate_pose - self.config['arm_pos_tol'], # Lower bound relative to Body B (optical frame)
+                    plate_pose + self.config['arm_pos_tol'], # Upper bound relative to Body B (optical frame)
+                    self.bodies['calibration_target'],                            # Body A
+                    self.bodies[self.config['optical_frame']],                    # Body B
+                    np.concatenate([                                                    # Transform from B to reference point
+                        np.zeros(3),                                                    #   Translation (identity)
+                        np.array([1, 0, 0, 0])                                          #   Rotation (identity)
+                    ]).reshape(7, 1)
+                ))
+
+                # Set the calibration plate orientation
+                constraints.append( ik.RelativeGazeDirConstraint ( self.robot,
+                    self.bodies['calibration_target'],                   # Body A
+                    self.bodies[self.config['optical_frame']],           # Body B
+                    np.array([0, 0,  1], dtype=np.float64).reshape(3,1), # Body A axis
+                    np.array([0, 0, -1], dtype=np.float64).reshape(3,1), # Body B axis
+                    self.config['gaze_dir_tol']                          # Cone tolerance in radians
+                ))
+
+                # Perhaps add collision constraints here?
+                # TODO: MinDistanceConstraint needed for sure
+                constraints.append( ik.MinDistanceConstraint ( self.robot,
+                    self.config['collision_min_distance'],   # Minimum distance between bodies
+                    list(),                                  # Active bodies (empty set means all bodies)
+                    set()                                    # Active collision groups (not filter groups! Empty set means all)
+                ))
+
+                # NOTE: Possibly a global position constraint to keep the arm off the ground
+                constraints.append( ik.WorldPositionConstraint ( self.robot,
+                    self.bodies["calibration_target"],                      # Body to constrain
+                    np.array([0, 0, 0]),                                    # Point on body
+                    np.array([np.nan, np.nan, self.config['min_height']]),  # Lower bound. Nan is don't care
+                    np.array([np.nan, np.nan, np.nan])                      # Upper bound. Nan is don't care
+                ))
+
+                # Actually solve the IK!
+                # Since we're solving ahead of time, just use the zero as seed
+                # NOTE: Could possibly track last solution as seed...
+                q_seed = self.robot.getZeroConfiguration()
+                options = ik.IKoptions(self.robot)
+                result = ik.InverseKin(self.robot, q_seed, q_seed, constraints, options)
+
+                if result.info[0] != 1:
+                    pass
+                    # print "Bad result! info = {}".format(result.info[0])
+                    # print "head_pose:",head_pose
+                    # print "plate_pose:", plate_pose
+                else:
+                    # Tuple: head_pose, arm_pose
+                    all_poses.append((result.q_sol[0][0:2],result.q_sol[0][2:]))
+                    # print "Success!"
+
+            # Show status info after every head pose
+            attempted = (i+1) * len(plate_poses)
+            success = len(all_poses)
+            total = len(head_poses)*len(plate_poses)
+            completion = attempted*100 / total
+            print "[{:>3d}%] {}/{} solutions found".format(completion, success, attempted)
+
+        return all_poses
 
     def run_test(self):
+        """
+        Run the data collection procedure.
+
+        This method systematically changes the head orientaiton of the robot
+        through its full range of motion. At every head pose, the arm is used to
+        move a calibration plate in a cube pattern within the camera field of
+        view, always keeping the plate perpendicular to the face of the camera.
+
+        Procedure:
+        1. Set up for data collection.
+        2. Create list of head orientations.
+        3. Create list of calibration target poses in camera frame.
+        4. Solve arm IK across all locations.
+        5. For each IK solution:
+            a. Move robot to solution.
+            b. Collect data.
+        """
+
+        # Prepare for data collection
         if self.config["collect_data"]:
             # create experiment directory
             date = datetime.utcnow()
@@ -61,222 +195,133 @@ class EyeHandCalibrator(object):
             exp_dir = date.strftime("%Y%m%dT%H%M%S_"+self.config["experiment_suffix"])
             data_path = '/'.join([self.config["data_root"], day_dir, exp_dir])
 
+            print "Preparing for data collection!"
+            print "Making output directory:", data_path
+
             # Make sure the directory exists
             os.makedirs(data_path)
 
-        # Face the camera
-        angle = self.config['angle']
-        sample_num = -1
-        for cluster_num, head_pose in enumerate(self.head_poses()):
-            if self.config["collect_data"]:
-                # Create cluster directory
-                cluster_dir = '/'.join([data_path, str(cluster_num)])
-                os.makedirs(cluster_dir)
-                self.current_dir = cluster_dir
+        # Determine robot positions
+        all_poses = self.computePoses()
 
-            print("New head orientation: {}, {}".format(*head_pose))
-            self.move_head(head_pose)
+        # Loop over valid configurations
+        for i, (head_pose, arm_pose) in enumerate(all_poses):
+            # Move robot to configuration
+            print "Moving to pose {}/{}".format(i+1, len(all_poses))
+            print "\thead:", head_pose
+            print "\tarm: ", arm_pose
+            if self.config['move_robot']: self.moveRobot(head_pose, arm_pose)
 
-            dp = 0
-            for pos in self.viewspace_samples():
-                print("Moving to pose:", pos)
-                success, conf, cam_pose, target_pose = self.solve_ik(pos, angle)
+            # Collect data
+            if self.config['collect_data']:
+                try:
+                    print "Collecting data..."
+                    conf.robotHead = head_pose
+                    self.collect_data(dp, conf, cam_pose, target_pose)
+                    print "Success!"
+                    dp += 1
+                except:
+                    print "Capture failed! Continuing anyway..."
 
-                # Only measure every 5th reachable location
-                if success: sample_num += 1
-                if sample_num % 5 != 0: continue
+    def moveRobot(self, head_pose, arm_pose):
+        # Get current robot configuration
+        robotConf = self.conf_service().conf
 
-                # Actually move
-                if success and self.config['move_robot']:
-                    sendRobotToConf(conf, 'move')
+        # Update to desired pose
+        robotConf.robotHead = head_pose
+        robotConf.robotRightArm = arm_pose
 
-                if success and self.config['collect_data']:
-                    try:
-                        print("Collecting data...")
-                        conf.robotHead = head_pose
-                        self.collect_data(dp, conf, cam_pose, target_pose)
-                        print("Success!")
-                        dp += 1
-                    except:
-                        print("Capture failed! Continuing anyway...")
+        # Send robot to pose
+        resp = self.go_to_service(GoToConfRequest(robotConf, 0.0))
+        return np.concatenate([resp.conf.robotHead, resp.conf.robotRightArm])
 
-
-
-    def fuzz_target_pose(self, target_rpy):
-        if not self.config['should_fuzz']: return [target_rpy]
-        result = list()
-        for i in np.linspace(0, 2*math.pi):
-            fuzzed = list(target_rpy)
-            fuzzed[2] += i
-            result.append(fuzzed)
-        return result
-
-    def solve_ik(self, target_xyz, target_rpy):
-        """
-        Move calibration plate to specified position. target given in camera coordinates.
-        """
-        optical_frame = self.config["optical_frame"]
-
-        # Generate fuzzed positions
-        fuzz = self.fuzz_target_pose(target_rpy)
-        print(fuzz)
-
-        attempts = 0
-        for fuzz_rpy in fuzz:
-            attempts += 1
-            print("Attempt", attempts)
-
-            # Convert to quaternion
-            target_quat = transf.quaternion_from_euler(*fuzz_rpy, axes='sxyz')
-            cam_pose = create_pose_stamp_msg("cam_pose", np.concatenate([target_xyz, target_quat]))
-            broadcast_pose(self.broadcaster, optical_frame, "eyehand_1", cam_pose)
-
-            # Transform camera frame pose to IK frame (world, according to Jay)
-            xform = self.tfBuffer.lookup_transform("world", optical_frame, rospy.Time.now(), rospy.Duration(1.0))
-            target_pose = do_transform_pose(cam_pose, xform)
-
-            # print("Cam pose:", cam_pose, sep='\n')
-            # print("Target pose:", target_pose, sep='\n')
-            broadcast_pose(self.broadcaster, "world", "eyehand_2", target_pose)
-
-            target_mat = pose_stamp_to_tf(target_pose)
-            print ("Target mat", target_mat, sep='\n')
-
-            # Now, get a matrix from the pose
-            conf, err = obtainConfViaIK(self.robot_handle, target_mat)
-            if err != 1:
-                continue
-            print("IK Solved!", conf, sep='\n')
-
-            return True, conf, cam_pose, target_pose
-        print("IK failed")
-        return False, {}, None, None
-
-    def move_head(self, head_pose):
-        sendRobotToConf({'robotHead': head_pose}, 'look', duration=5.0)
-
-    def viewspace_samples(self):
-        """
-        Expected ranges:
-            pan: -0.5 -> 0.5 (right to left)
-            tilt: 0 -> -0.7 (straight to down)
-        """
+    def computePlatePoses(self):
         # params
-        kuka_reach = self.config["kuka_reach"]
         near_fov = self.config["near_fov"]
         far_fov = self.config["far_fov"]
         horiz_angle = self.config["horiz_angle"]
         vert_angle = self.config["vert_angle"]
         grid_size = self.config["grid_size"]
-        optical_frame = self.config["optical_frame"]
 
         # Compute corners of bounding rect
-
-        # Near-top-right
-        p1x = near_fov*math.tan(horiz_angle / 2.0)
+        # Near-top-left
+        p1x = -near_fov*math.tan(horiz_angle / 2.0)
         p1y = -near_fov*math.tan(vert_angle / 2.0)
         p1z = near_fov
-        print ("Bounds:", p1x, p1y, p1z)
+        print  "Inner bounds:", p1x, p1y, p1z
 
-        # Far-bottom-left
+        # Far-bottom-right
         p2x = -p1x
         p2y = -p1y
         p2z = far_fov
+        print  "Outer bounds:", p2x, p2y, p2z
 
-        # Get Kuka base link in camera coords
-        xform = self.tfBuffer.lookup_transform(optical_frame, "iiwa_link_0", rospy.Time.now(), rospy.Duration(1.0))
-        t = xform.transform.translation
-        kuka_base = np.array([t.x, t.y, t.z])
-        print("Kuka base pose:", kuka_base)
-
+        plate_poses = list()
         for x in np.linspace(p1x, p2x, num=grid_size):
             for y in np.linspace(p1y, p2y, num=grid_size):
                 for z in np.linspace(p1z, p2z, num=grid_size):
-                    p = np.array([x, y, z])
-                    dist = np.linalg.norm(p - kuka_base)
-                    if dist < kuka_reach:
-                        rospy.sleep(1)
-                        yield p
-                    else:
-                        print("Out of reach: {}, {}, {}".format(x, y, z))
+                    plate_poses.append(np.array([x, y, z], dtype=np.float64).reshape(3, 1))
+        return plate_poses
 
-    def head_poses(self):
+    def computeHeadPoses(self):
         pans = np.linspace(self.config["pan_low"], self.config["pan_high"], num=self.config["pan_count"])
         tilts = np.linspace(self.config["tilt_low"], self.config["tilt_high"], num=self.config["tilt_count"])
+
+        head_poses = list()
         for pan in pans:
             for tilt in tilts:
-                yield [pan, tilt]
+                head_poses.append(np.array([pan, tilt], dtype=np.float64).reshape(2, 1))
+        return head_poses
 
-
-def broadcast(broadcaster, parent, child, xyz, angle, euler=True):
-    t = geometry_msgs.msg.TransformStamped()
-    t.header.stamp = rospy.Time.now()
-    t.header.frame_id = parent
-    t.child_frame_id = child
-    t.transform.translation.x = xyz[0]
-    t.transform.translation.y = xyz[1]
-    t.transform.translation.z = xyz[2]
-    q = transf.quaternion_from_euler(*angle, axes="sxyz") if euler else angle
-    t.transform.rotation.x = q[0]
-    t.transform.rotation.y = q[1]
-    t.transform.rotation.z = q[2]
-    t.transform.rotation.w = q[3]
-    broadcaster.sendTransform(t)
-
-def broadcast_pose(broadcaster, parent, child, pose):
-    p = pose.pose.position
-    q = pose.pose.orientation
-    broadcast(broadcaster, parent, child, [p.x, p.y, p.z], [q.x, q.y, q.z, q.w], euler=False)
-
-# Random notes from earlier days...
-# Camera at [0, 0]
-# Near-top-left: [0.6, -0.15, 0.45]
-# Far-bottom-right: [0.90, 0.45, -0.35]
-#
-# !! Self collision: [1.00, 0.50, -0.25]
 
 def main():
     # Initialize ROS node
     rospy.init_node('eyehand_calib')
 
-    # Generate full directory name
-
     config = {
-        # Test parametes
+        # Test control
+        "collect_data": False,
+        "move_robot": True,
+        "save_ik": True,
+        "load_ik": False,
+
+        # Data collection
         "data_root": "/home/momap/momap_data",
         "experiment_suffix": "eyehand",
         "frame_count": 10,
-        "collect_data": False,
-        "move_robot": True,
-        "should_fuzz": True,
 
-        # Optical frame
+        # Robot description
+        "ik_urdf": "/home/momap/momap/src/robot_core/robot_descriptions/momap_description/urdf/.full_momap_left_arm-drake.urdf",
         "optical_frame": "kinect1_rgb_optical_frame",
-        "angle": [0, -math.pi, 0],
-        "kuka_reach_frame": "iiwa_link_0",
+
+        # IK persistence
+        "ik_save_path": "",
+        "ik_load_path": "",
+
+        # Inverse kinematics
+        "head_pose_tol": 0.001,
+        "arm_pos_tol": 0.01,
+        "gaze_dir_tol": 0.01,
+        "collision_min_distance": 0.01,
+        "min_height": 0.30,
 
         # Head pose selection
         "pan_low": 0.0,
         "pan_high": 0.5,
-        "pan_count": 1,
-        "tilt_low": -0.6,
-        "tilt_high": -0.7,
-        "tilt_count":   1,
+        "pan_count": 3,
+        "tilt_low": 0.0,
+        "tilt_high": -0.5,
+        "tilt_count":   3,
 
-        # Target pattern
-        "kuka_reach": 1.2,
-        "near_fov": 0.9,
-        "far_fov": 0.9,
-        "horiz_angle": 00.0 * math.pi / 180.0,
-        "vert_angle": 00.0 * math.pi / 180.0,
-        "grid_size": 1
+        # Plate pose selection
+        "near_fov": 0.6,
+        "far_fov": 1.2,
+        "horiz_angle": 40.0 * math.pi / 180.0,
+        "vert_angle": 30.0 * math.pi / 180.0,
+        "grid_size": 5
     }
 
     tester = EyeHandCalibrator(config)
-    # angle = [0, -math.pi / 2.0, 0]
-    # pos =  [1.0, 0.60, -0.00]
-    # tester.move_head([0, 0])
-    # tester.move_to_pose(pos, angle)
     tester.run_test()
 
 if __name__ == "__main__":
