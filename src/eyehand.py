@@ -341,7 +341,7 @@ class EyeHandCalibrator(object):
                 start = last_good_start
                 last_good_start = None
 
-            q_sol = trajectoryIK(start, end)
+            q_sol = self.trajectoryIK(start, end)
 
             if q_sol is None:
                 # Hold on to the start position if we fail
