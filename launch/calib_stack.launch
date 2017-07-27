@@ -28,8 +28,8 @@
 
 
   <!-- Load robot_prims parameters -->
-  	<rosparam command="load" file="$(find robot_prims)/data/conf_settings.yaml"/>
-    <rosparam command="load" file="$(find segicp_launch)/config/params.yaml"/>
+  	<!-- <rosparam command="load" file="$(find robot_prims)/data/conf_settings.yaml"/> -->
+    <!-- <rosparam command="load" file="$(find segicp_launch)/config/params.yaml"/> -->
 
   <!-- aruco tags -->
     <node name="aruco_tags" pkg="aruco_ros" type="marker_publisher" required="true"/>

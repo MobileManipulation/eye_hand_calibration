@@ -1,8 +1,6 @@
-string data_path
+string out_dir
 uint16 data_point
 uint16 frame_count
-robot_msgs/RobotConfiguration conf
-geometry_msgs/PoseStamped camera_target
-geometry_msgs/PoseStamped world_target
+float64[] target_config
 ---
 uint16 captured_frames

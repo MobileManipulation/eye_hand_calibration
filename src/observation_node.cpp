@@ -150,15 +150,15 @@ public:
     dp << std::setw(3) << std::setfill('0') << std::right << req.data_point;
 
     // Build up relevant filenames
-    std::string dp_csv = req.data_path + '/' + dp.str() + "_raw_data.csv";
-    std::string dp_dir = req.data_path + '/' + dp.str();
+    std::string dp_dir = req.out_dir + '/' + dp.str();
+    std::string dp_csv = req.out_dir + '/' + dp.str() + "_raw_data.csv";
 
     // Validate filenames...
     std::cout << "dp_csv: " << dp_csv << std::endl;
     std::cout << "dp_dir: " << dp_dir << std::endl;
 
     // Create folders
-    boost::filesystem::create_directory(req.data_path);
+    boost::filesystem::create_directory(req.out_dir);
     boost::filesystem::create_directory(dp_dir);
 
     // Open main CSV file
@@ -191,14 +191,13 @@ public:
       // Items that don't vary per frame
       ////////////////////////////////////
       // Calibration plate desired location in camera space
-      serialize_pose(csv_stream, req.camera_target.pose) << ",\t";
-      // Calibration plate desired location in camera space
-      serialize_pose(csv_stream, req.world_target.pose) << ",\t";
-      // Joint states: Arm & PTU conf, desired
-      csv_stream << req.conf.robotHead[0] << ','; // pan
-      csv_stream << req.conf.robotHead[1] << ','; // tilt
-      for (auto j = 0; j < 7; j++)
-        csv_stream << req.conf.robotRightArm[j] << ','; // iiwa_link_0-7
+      // serialize_pose(csv_stream, req.camera_target.pose) << ",\t";
+      // Calibration plate desired location in world space
+      // serialize_pose(csv_stream, req.world_target.pose) << ",\t";
+
+      // Joint states: Target PTU & Arm conf
+      for (auto j = 0; j < 9; j++)
+        csv_stream << req.target_config[j] << ',';
 
       csv_stream << "\t\t";
 
@@ -244,7 +243,7 @@ public:
     raw_image_sub.subscribe(nh, "/kinect1/rgb/image_rect_color", 10);
     pointcloud_sub.subscribe(nh, "/kinect1/depth_registered/points", 10);
     aruco_sub.subscribe(nh, "/aruco_tags/markers", 10);
-    channel.reset(new SyncChannel(SyncPolicy(10), joint_states_sub, raw_image_sub, pointcloud_sub, aruco_sub));
+    channel.reset(new SyncChannel(SyncPolicy(20), joint_states_sub, raw_image_sub, pointcloud_sub, aruco_sub));
     channel->registerCallback(&EyehandObserver::data_callback, this);
 
     // Spin service call in its own thread so it doesn't block
