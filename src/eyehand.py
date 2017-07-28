@@ -3,12 +3,7 @@
 """
 Automated data collection script for Kuka eye-hand calibration with the Kinect.
 
-This script requires Spartan Drake.
-
-Prereqs:
-* iiwa_calibration.yaml:
-    Set robotRightGripper -> targetConstraintFrame to calibration_target so the IK
-    solver will get it right
+This script requires Spartan / Draper Drake.
 """
 
 # For robot motion
