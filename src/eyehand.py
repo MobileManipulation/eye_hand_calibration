@@ -269,7 +269,7 @@ class EyeHandCalibrator(object):
         # FIXME: Proper data format
         all_traj = list()
         with open(filename, 'rb') as fp:
-            for i in range(34):
+            for i in range(499):
                 all_traj.append(np.load(fp))
 
         # Throw out the poses we don't care about
@@ -357,6 +357,9 @@ class EyeHandCalibrator(object):
         return all_traj
 
     def trajectoryIK(self, start, end):
+
+        dur = self.config["trajectory_duration"]
+
         joints = np.array(
             [self.positions[joint] for joint in self.joint_names],
             dtype=np.int32
@@ -378,7 +381,7 @@ class EyeHandCalibrator(object):
         # Constrain the end position
         end_pose = np.concatenate(end).reshape(9, 1)
         end_constraint = ik.PostureConstraint( self.robot,
-            np.array([10.0, 10.0]).reshape([2,1])    # Active time
+            np.array([dur, dur]).reshape([2,1])    # Active time
         )
         end_constraint.setJointLimits(
             joints,
@@ -403,10 +406,10 @@ class EyeHandCalibrator(object):
         ))
 
         # Prepare times of interest for trajectory solve
-        times = np.linspace(0, 10, num=self.config['trajectory_count'], endpoint=True)
+        times = np.linspace(0, dur, num=self.config['trajectory_count'], endpoint=True)
 
         # Compute cubic interpolation as seed trajectory
-        x = np.array([0, 10])
+        x = np.array([0, dur])
         y = np.hstack([start_pose, end_pose])
         f = CubicSpline(x, y, axis=1, bc_type='clamped')
         q_seed = f(times)
@@ -415,7 +418,7 @@ class EyeHandCalibrator(object):
         # Solve the IK problem
         options = ik.IKoptions(self.robot)
         options.setMajorIterationsLimit(400)
-        options.setFixInitialState(False)
+        options.setFixInitialState(True)
         # print "Iterations limit:", options.getMajorIterationsLimit()
         result = ik.InverseKinTraj(self.robot, times, q_seed, q_seed, constraints, options)
 
@@ -499,6 +502,8 @@ class EyeHandCalibrator(object):
         #   3-8: IIWA Joints 1-7
         trajectories = self.getTrajectories()
 
+        if not self.config["move_robot"]: return
+
         for i, traj in enumerate(trajectories):
             print "Following trajectory {}/{}!".format(i+1, len(trajectories))
             self.followTrajectory(traj)
@@ -512,7 +517,6 @@ class EyeHandCalibrator(object):
                     # collect_data(self, out_dir, pose_idx, target_conf):
                     self.collect_data(self.data_path, i, traj[-1, 1:])
                     print "Success!"
-                    dp += 1
                 except Exception as e:
                     print "Capture failed! Continuing anyway..."
                     print e
@@ -541,11 +545,11 @@ def main():
         # Test control
         "collect_data": True,
         "move_robot": True,
-        "save_ik": True,
+        "save_ik": False,
         "load_ik": True,
-        "save_traj": True,
+        "save_traj": False,
         "load_traj": True,
-        "start_pose": 8,
+        "start_pose": 0,
         "pause_duration": 1.0,
 
         # Data collection
@@ -570,22 +574,23 @@ def main():
         "pose_tol": 0.001,
         "collision_min_distance": 0.01,
         "min_height": 0.30,
-        "trajectory_count": 30,
+        "trajectory_count": 40,
+        "trajectory_duration": 20,
 
         # Head pose selection
         "pan_low": 0.0,
-        "pan_high": 0.5,
-        "pan_count": 3,
+        "pan_high": 1.57,
+        "pan_count": 5,
         "tilt_low": 0.0,
         "tilt_high": -0.5,
-        "tilt_count":   3,
+        "tilt_count":   5,
 
         # Plate pose selection
         "near_fov": 0.6,
         "far_fov": 1.2,
         "horiz_angle": 35.0 * math.pi / 180.0,
         "vert_angle": 25.0 * math.pi / 180.0,
-        "grid_size": 3
+        "grid_size": 4
     }
 
     tester = EyeHandCalibrator(config)
