@@ -3,11 +3,10 @@
 # a new file that contains only the relevant information for Lou's
 # calibration script.
 # That is, it produces a file with these contents:
-# 1       : Cluster
-# 2       : Datapoint
-# 3       : Frame
-# 4       : X component of plane normal
-# 5       : Y component of plane normal
-# 6       : Z component of plane normal
-# 7       : Distance (along normal direction) from origin to plane
-awk -F, '{OFS=" ";print $1,$2,$3,$42,$43,$44,$45,$46,$47,$48,$49,$50,$28,$29,$30,$31,$32,$33,$34}' $@
+# 1       : Datapoint
+# 2       : Frame
+# 3       : Actual Pan of head joint
+# 4       : Actual Tilt of head joint
+# 5-11    : Actual IIWA joint angles, ordered 0-6
+# 12-18   : AR tag location, in camera frame
+awk -F, '{OFS=" ";print $1,$2,$27,$28,$29,$30,$31,$32,$33,$34,$35,$13,$14,$15,$16,$17,$18,$19}' $@
