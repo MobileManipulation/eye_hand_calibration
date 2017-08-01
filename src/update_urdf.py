@@ -7,24 +7,19 @@ from itertools import islice
 import numpy as np
 import tf.transformations as transf
 
-path = "/home/momap/momap/src/robot_core/robot_descriptions/robot_description/urdf"
-urdf_in = "draper_ptu_gripper-eyehand1c.urdf"
-urdf_out = "draper_ptu_gripper-eyehand3.urdf"
+path = "/home/momap/momap/src/robot_core/robot_descriptions/momap_description/xacro"
+urdf_in = "momap_left_arm.urdf.xacro"
+urdf_out = "momap_left_arm.urdf.xacro"
 shouldWrite = True
 
-data_path = "/home/momap/momap_data/log_robot/20170630/20170630T155606_eyehand"
-data_in = "Calibration_2017-07-06T1648_UNIX.txt"
+data_path = "/home/momap/momap_data/log_robot/20170731/20170731T213344_eyehand"
+data_in = "Calibration_2017-08-01T1141_UNIX.txt"
 
 # Joint names
 joint_names = [
-    "head_mount_joint",
-    "ptu_base",
-    "ptu_pan",
-    "ptu_tilt",
-    "ptu_mount",
-    "camera_joint",
-    "kinect1_optical_joint",
-    "jnt_kinect1_base_link"
+    "kinect1_link_to_rgb",
+    "torso_to_ptu_base",
+    "base_to_torso"
 ]
 
 # Read the URDF
