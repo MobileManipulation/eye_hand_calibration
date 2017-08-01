@@ -17,6 +17,7 @@ from sensor_msgs.msg import JointState
 from aruco_msgs.msg import MarkerArray
 import tf2_ros
 from tf2_geometry_msgs import PoseStamped, do_transform_pose
+from geometry_msgs.msg import TransformStamped
 
 # For IK
 import pydrake
@@ -67,6 +68,7 @@ class TagTracker(object):
         print "Initializing publishers and subscribers..."
         self.tf_buffer = tf2_ros.Buffer(rospy.Duration(10.0)) #tf buffer length
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
+        self.tf_broadcaster = tf2_ros.TransformBroadcaster()
 
         print "ROS stack ready!"
         print
@@ -83,6 +85,20 @@ class TagTracker(object):
                         rospy.Time(0),
                         rospy.Duration(1.0)) #wait for 1 second
         pose_transformed = do_transform_pose(p, transform)
+
+        # Publish pose as debug transform
+        t = TransformStamped()
+        t.header = marker.header
+        t.header.frame_id = "world"
+        t.child_frame_id = "aruco_track"
+        t.transform.translation.x = pose_transformed.pose.position.x
+        t.transform.translation.y = pose_transformed.pose.position.y
+        t.transform.translation.z = pose_transformed.pose.position.z
+        t.transform.rotation.x = pose_transformed.pose.orientation.x
+        t.transform.rotation.y = pose_transformed.pose.orientation.y
+        t.transform.rotation.z = pose_transformed.pose.orientation.z
+        t.transform.rotation.w = pose_transformed.pose.orientation.w
+        self.tf_broadcaster.sendTransform(t)
 
         # Grab pose as a vector
         target = np.array([
@@ -139,9 +155,9 @@ class TagTracker(object):
             q_sol = self.solveIK(target)
             print q_sol
 
-            # Send command to the PTU
-            self.movePtu(q_sol)
-
+            if self.config["move_head"]:
+                # Send command to the PTU
+                self.movePtu(q_sol)
             break
 
     def track(self):
@@ -158,6 +174,7 @@ def main():
         # Tracking config
         "tag": 50,
         "tag_topic": "/aruco_tags/markers",
+        "move_head": False,
 
         # Robot config
         "ik_urdf": "/home/momap/momap/src/robot_core/robot_descriptions/momap_description/urdf/.momap_left_arm-drake.urdf",
