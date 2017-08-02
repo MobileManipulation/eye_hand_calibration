@@ -24,10 +24,12 @@ import pydrake
 from pydrake.solvers import ik
 
 import numpy as np
+from eyehand_utils import query_yes_no
 
 class TagTracker(object):
     def __init__(self, config):
         self.config = config
+        self.target = None # Initialize tracked target pose
 
         # Initialize robot
         print "Loading URDF..."
@@ -104,7 +106,11 @@ class TagTracker(object):
         target = np.array([
             pose_transformed.pose.position.x,
             pose_transformed.pose.position.y,
-            pose_transformed.pose.position.z
+            pose_transformed.pose.position.z,
+            pose_transformed.pose.orientation.w,
+            pose_transformed.pose.orientation.x,
+            pose_transformed.pose.orientation.y,
+            pose_transformed.pose.orientation.z
         ])
 
         return target
@@ -149,10 +155,10 @@ class TagTracker(object):
             if marker.id != self.config["tag"]: continue
 
             # Use ROS to translate from camera to world frame
-            target = self.markerToWorldFrame(marker)
+            self.target = self.markerToWorldFrame(marker)
 
             # Solve for best head position
-            q_sol = self.solveIK(target)
+            q_sol = self.solveIK(target[0:3])
             print q_sol
 
             if self.config["move_head"]:
@@ -160,11 +166,26 @@ class TagTracker(object):
                 self.movePtu(q_sol)
             break
 
-    def track(self):
-        print "Subscribing to {}!".format(self.config["tag_topic"])
+    def start_track(self):
+        # print "Subscribing to {}!".format(self.config["tag_topic"])
+        print "Start tracking!"
         self.sub_tag_topic = rospy.Subscriber(self.config["tag_topic"], MarkerArray, self.tag_callback)
         self.pub_ptu_cmd = rospy.Publisher('/ptu/cmd', JointState, queue_size=10)
+
+    def stop_track(self):
+        print "Stop tracking!"
+        # Unsubscribe
+        self.sub_tag_topic.unregister()
+
+    def track(self):
+        self.start_track()
         rospy.spin()
+
+    def track_for(self, dur):
+        self.start_track()
+        rospy.sleep(dur)
+        self.stop_track()
+        return self.target
 
 def main():
     # Initialize ROS node
@@ -189,7 +210,12 @@ def main():
     }
 
     tracker = TagTracker(config)
-    tracker.track()
+    yep = True
+    while yep:
+        pos = tracker.track_for(10)
+        print "Final position:", pos
+        yep = query_yes_no("Track again?")
+
 
 if __name__=="__main__":
     main()
