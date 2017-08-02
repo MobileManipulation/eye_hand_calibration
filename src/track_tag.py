@@ -158,8 +158,8 @@ class TagTracker(object):
             self.target = self.markerToWorldFrame(marker)
 
             # Solve for best head position
-            q_sol = self.solveIK(target[0:3])
-            print q_sol
+            q_sol = self.solveIK(self.target[0:3])
+            # print q_sol
 
             if self.config["move_head"]:
                 # Send command to the PTU
