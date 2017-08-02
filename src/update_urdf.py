@@ -8,18 +8,16 @@ import numpy as np
 import tf.transformations as transf
 
 path = "/home/momap/momap/src/robot_core/robot_descriptions/momap_description/xacro"
-urdf_in = "momap_left_arm.urdf.xacro"
-urdf_out = "momap_left_arm.urdf.xacro"
+urdf_in = "kinect.xacro"
+urdf_out = "kinect.xacro"
 shouldWrite = True
 
-data_path = "/home/momap/momap_data/log_robot/20170731/20170731T213344_eyehand"
-data_in = "Calibration_2017-08-01T1141_UNIX.txt"
+data_path = "/home/momap/momap_data/log_robot/20170801/20170801T205210_eyehand_ir"
+data_in = "Calibration-IR_2017-08-02T152501_UNIX.txt"
 
 # Joint names
 joint_names = [
-    "kinect1_link_to_rgb",
-    "torso_to_ptu_base",
-    "base_to_torso"
+    "kinect1_link_to_depth",
 ]
 
 # Read the URDF
