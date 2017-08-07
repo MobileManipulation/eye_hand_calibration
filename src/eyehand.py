@@ -264,7 +264,7 @@ class EyeHandCalibrator(object):
         # FIXME: Proper data format
         all_traj = list()
         with open(filename, 'rb') as fp:
-            for i in range(499):
+            for i in range(self.config["load_traj_count"]):
                 all_traj.append(np.load(fp))
 
         # Throw out the poses we don't care about
@@ -544,6 +544,7 @@ def main():
         "load_ik": True,
         "save_traj": False,
         "load_traj": True,
+        "load_traj_count": 499,
         "start_pose": 0,
         "pause_duration": 1.0,
 
@@ -559,8 +560,8 @@ def main():
         # IK persistence
         "ik_save_path": "test_ik.save",
         "ik_load_path": "test_ik.save",
-        "traj_save_path": "test_traj.save",
-        "traj_load_path": "test_traj.save",
+        "traj_save_path": "/home/momap/momap_data/log_robot/eyehand_config/test_traj.save",
+        "traj_load_path": "/home/momap/momap_data/log_robot/eyehand_config/test_traj.save",
 
         # Inverse kinematics
         "head_pose_tol": 0.001,

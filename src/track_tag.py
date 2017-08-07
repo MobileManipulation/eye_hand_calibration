@@ -210,11 +210,12 @@ def main():
     }
 
     tracker = TagTracker(config)
-    yep = True
-    while yep:
-        pos = tracker.track_for(10)
-        print "Final position:", pos
-        yep = query_yes_no("Track again?")
+    tracker.track()
+#    yep = True
+#    while yep:
+#        pos = tracker.track_for(10)
+#        print "Final position:", pos
+#        yep = query_yes_no("Track again?")
 
 
 if __name__=="__main__":
