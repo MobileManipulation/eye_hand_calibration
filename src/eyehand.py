@@ -174,14 +174,6 @@ class EyeHandCalibrator(object):
                     set()                                    # Active collision groups (not filter groups! Empty set means all)
                 ))
 
-                # Keep the arm off the ground
-                constraints.append( ik.WorldPositionConstraint ( self.robot,
-                    self.bodies["calibration_target"],                      # Body to constrain
-                    np.array([0, 0, 0]),                                    # Point on body
-                    np.array([np.nan, np.nan, self.config['min_height']]),  # Lower bound. Nan is don't care
-                    np.array([np.nan, np.nan, np.nan])                      # Upper bound. Nan is don't care
-                ))
-
                 # Actually solve the IK!
                 # Since we're solving ahead of time, just use the zero as seed
                 # NOTE: Could possibly track last solution as seed...
@@ -392,14 +384,6 @@ class EyeHandCalibrator(object):
             set()                                    # Active collision groups (not filter groups! Empty set means all)
         ))
 
-        # Constrain against hitting the ground
-        constraints.append( ik.WorldPositionConstraint ( self.robot,
-            self.bodies["calibration_target"],                      # Body to constrain
-            np.array([0, 0, 0]),                                    # Point on body
-            np.array([np.nan, np.nan, self.config['min_height']]),  # Lower bound. Nan is don't care
-            np.array([np.nan, np.nan, np.nan])                      # Upper bound. Nan is don't care
-        ))
-
         # Prepare times of interest for trajectory solve
         times = np.linspace(0, dur, num=self.config['trajectory_count'], endpoint=True)
 
@@ -542,15 +526,15 @@ def main():
         "move_robot": True,
         "save_ik": False,
         "load_ik": True,
-        "save_traj": False,
+        "save_traj": True,
         "load_traj": True,
-        "load_traj_count": 499,
+        "load_traj_count": 64,
         "start_pose": 0,
         "pause_duration": 1.0,
 
         # Data collection
         "data_root": "/home/momap/momap_data/log_robot",
-        "experiment_suffix": "eyehand",
+        "experiment_suffix": "full_calib",
         "frame_count": 10,
 
         # Robot description
@@ -558,10 +542,10 @@ def main():
         "optical_frame": "kinect1_rgb_optical_frame",
 
         # IK persistence
-        "ik_save_path": "test_ik.save",
-        "ik_load_path": "test_ik.save",
-        "traj_save_path": "/home/momap/momap_data/log_robot/eyehand_config/test_traj.save",
-        "traj_load_path": "/home/momap/momap_data/log_robot/eyehand_config/test_traj.save",
+        "ik_save_path": "full_calib_ik.save",
+        "ik_load_path": "full_calib_ik.save",
+        "traj_save_path": "full_calib_traj.save",
+        "traj_load_path": "full_calib_traj.save",
 
         # Inverse kinematics
         "head_pose_tol": 0.001,
@@ -570,23 +554,23 @@ def main():
         "pose_tol": 0.001,
         "collision_min_distance": 0.01,
         "min_height": 0.30,
-        "trajectory_count": 40,
-        "trajectory_duration": 20,
+        "trajectory_count": 60,
+        "trajectory_duration": 30,
 
         # Head pose selection
-        "pan_low": 0.0,
+        "pan_low": 1.57,
         "pan_high": 1.57,
-        "pan_count": 5,
-        "tilt_low": 0.0,
-        "tilt_high": -0.5,
-        "tilt_count":   5,
+        "pan_count": 1,
+        "tilt_low": -0.3,
+        "tilt_high": -0.7,
+        "tilt_count":   1,
 
         # Plate pose selection
         "near_fov": 0.6,
         "far_fov": 1.2,
         "horiz_angle": 35.0 * math.pi / 180.0,
         "vert_angle": 25.0 * math.pi / 180.0,
-        "grid_size": 4
+        "grid_size": 5
     }
 
     tester = EyeHandCalibrator(config)
