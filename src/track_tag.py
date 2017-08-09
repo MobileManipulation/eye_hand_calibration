@@ -195,7 +195,7 @@ def main():
         # Tracking config
         "tag": 50,
         "tag_topic": "/aruco_tags/markers",
-        "move_head": False,
+        "move_head": True,
 
         # Robot config
         "ik_urdf": "/home/momap/momap/src/robot_core/robot_descriptions/momap_description/urdf/.momap_left_arm-drake.urdf",

@@ -181,7 +181,7 @@ public:
     for (uint16_t frame_id = 0; frame_id < buffer.size(); frame_id++)
     {
       // Create frame-specific filenames
-      std::string img_file = create_filename(dp_dir, req.data_point, frame_id, "image_color.png");
+      std::string img_file = create_filename(dp_dir, req.data_point, frame_id, image_ + ".png");
 
       std::cout << img_file << std::endl;
 
@@ -238,12 +238,19 @@ public:
   }
 
   EyehandObserver()
-  : capture_active(false),
+  : nh("~"),
+    capture_active(false),
     tfListener(tfBuffer)
   {
+    // Parameters
+    nh.param<std::string>("camera", camera_, "/kinect1/rgb");
+    nh.param<std::string>("image", image_, "image_color");
+
+    std::string image_topic = camera_ + "/" + image_;
+
     // Listen for ALL THE DATA!
     joint_states_sub.subscribe(nh, "/joint_states", 10);
-    raw_image_sub.subscribe(nh, "/kinect1/rgb/image_color", 10);
+    raw_image_sub.subscribe(nh, image_topic, 10);
     pixel_sub.subscribe(nh, "/aruco_tags/marker_pixels", 10);
     aruco_sub.subscribe(nh, "/aruco_tags/markers", 10);
     channel.reset(new SyncChannel(SyncPolicy(20), joint_states_sub, raw_image_sub, pixel_sub, aruco_sub));
@@ -264,7 +271,11 @@ public:
   {
     server_thread.join();
   }
+
 private:
+  // Parameters
+  std::string image_, camera_;
+
   // Data listeners
   ros::NodeHandle nh;
   message_filters::Subscriber<sensor_msgs::JointState> joint_states_sub;

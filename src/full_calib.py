@@ -172,7 +172,7 @@ class SystemCalibrator(object):
 
         options = {
             "maxiter": its,
-            "maxfun": 100000,
+            "maxfun": 500000,
             "eps": 1e-9,
             "ftol": 1e-12
         }
@@ -312,12 +312,13 @@ def projectPoints(kinect_points, pixels, extrinsics, intrinsics):
 
 if __name__=="__main__":
     # Testing values
-    intrinsics = np.array([0.14, -0.23, -0.003, 0.002, 525, 525, 310, 260])
-    extrinsics = np.array([0, -0.025, 0, 0, 0, 0, 1]) # [x, y, z, qx, qy, qz, qw]
-    grid_size = 50
-
+    # intrinsics = np.array([0.14, -0.23, -0.003, 0.002, 525, 525, 310, 260])
+    # extrinsics = np.array([0, -0.025, 0, 0, 0, 0, 1]) # [x, y, z, qx, qy, qz, qw]
+    # grid_size = 50
     # data = TestDataGenerator(grid_size, extrinsics, intrinsics).getCalibratorArgs()
-    filename = "/home/momap/momap_data/log_robot/20170808/20170808T154318_full_calib/20170808T154318_full_calib-merged.csv"
+
+    # Read data!
+    filename = "/home/momap/momap_data/log_robot/20170809/20170809T163531_full_calib_ir/20170809T163531_full_calib-merged.csv"
     data = DataReader(filename).get_data()
     cal = SystemCalibrator(*data)
     result = cal.optimize()
