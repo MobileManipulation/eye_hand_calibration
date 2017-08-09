@@ -5,6 +5,7 @@
 #include <sensor_msgs/JointState.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <geometry_msgs/PolygonStamped.h>
 #include <aruco_msgs/MarkerArray.h>
 #include <geometry_msgs/TransformStamped.h>
 
@@ -39,7 +40,7 @@ class EyehandObserver
 public:
   void data_callback(const sensor_msgs::JointState::ConstPtr& states,
                      const sensor_msgs::Image::ConstPtr& image,
-                     const sensor_msgs::PointCloud2::ConstPtr& points,
+                     const geometry_msgs::PolygonStamped::ConstPtr& pixels,
                      const aruco_msgs::MarkerArray::ConstPtr& tags)
   {
     if (!capture_active) return;
@@ -48,7 +49,7 @@ public:
     // Put data in buffer
     buffer[current_frame].states = states;
     buffer[current_frame].image = image;
-    buffer[current_frame].points = points;
+    buffer[current_frame].pixels = pixels;
     buffer[current_frame].tags = tags;
 
     current_frame++;
@@ -90,8 +91,10 @@ public:
     for (auto& frame : buffer)
     {
       // Grab the required transforms
-      frame.ee_xform = tfBuffer.lookupTransform("calibration_target", "world", frame.states->header.stamp);
-      frame.ptu_xform = tfBuffer.lookupTransform("kinect1_rgb_optical_frame", "world", frame.states->header.stamp);
+      frame.calibration_top_left = tfBuffer.lookupTransform("kinect1_link", "calibration_top_left", frame.states->header.stamp);
+      frame.calibration_top_right = tfBuffer.lookupTransform("kinect1_link", "calibration_top_right", frame.states->header.stamp);
+      frame.calibration_bottom_left = tfBuffer.lookupTransform("kinect1_link", "calibration_bottom_left", frame.states->header.stamp);
+      frame.calibration_bottom_right = tfBuffer.lookupTransform("kinect1_link", "calibration_bottom_right", frame.states->header.stamp);
     }
     std::cout << "Done!" << std::endl;
 
@@ -143,6 +146,16 @@ public:
       return os;
   }
 
+  template<class T>
+  std::ostream& serialize_pixels(std::ostream& os, const T& pixels)
+  {
+    for (auto& pixel : pixels)
+    {
+      os << pixel.x << ',';
+      os << pixel.y << ',';
+    }
+  }
+
   void serialize_data(const eyehand_calib::CaptureRequest& req)
   {
     // Format datapoint number like this: 042
@@ -168,10 +181,8 @@ public:
     for (uint16_t frame_id = 0; frame_id < buffer.size(); frame_id++)
     {
       // Create frame-specific filenames
-      std::string pcd_file = create_filename(dp_dir, req.data_point, frame_id, "raw_points.pcd");
-      std::string img_file = create_filename(dp_dir, req.data_point, frame_id, "image_rect_color.png");
+      std::string img_file = create_filename(dp_dir, req.data_point, frame_id, "image_color.png");
 
-      std::cout << pcd_file << std::endl;
       std::cout << img_file << std::endl;
 
       auto& frame = buffer[frame_id];
@@ -190,40 +201,32 @@ public:
       ////////////////////////////////////
       // Items that don't vary per frame
       ////////////////////////////////////
-      // Calibration plate desired location in camera space
-      // serialize_pose(csv_stream, req.camera_target.pose) << ",\t";
-      // Calibration plate desired location in world space
-      // serialize_pose(csv_stream, req.world_target.pose) << ",\t";
-
       // Joint states: Target PTU & Arm conf
       for (auto j = 0; j < 9; j++)
         csv_stream << req.target_config[j] << ',';
+
+      // Joint states: Arm & PTU conf, measured by Kuka
+      auto& states = frame.states->position;
+      for (auto j = 3; j < 12; j++)
+        csv_stream << states[j] << ',';
 
       csv_stream << "\t\t";
 
       ////////////////////////////////////
       // Items that do vary per frame
       ////////////////////////////////////
-      // AR Tag location (pose measured by camera)
+      // AR Tag location (pose in camera frame)
       auto& tag = frame.tags->markers[0].pose.pose;
       serialize_pose(csv_stream, tag) << ",\t";
-      // Calibration plate location relative to world (pose measured by Kuka)
-      serialize_xform(csv_stream, frame.ee_xform.transform) << ",\t";
 
-      // Joint states: Arm & PTU conf, measured by Kuka
-      auto& states = frame.states->position;
-      for (auto j = 3; j < 12; j++)
-        csv_stream << states[j] << ',';
-      csv_stream << '\t';
+      // AR Tag corner pixels
+      serialize_pixels(csv_stream, frame.pixels->polygon.points);
 
-      // kinect1_rgb_optical_frame location relative to world (camera location, measured)
-      serialize_xform(csv_stream, frame.ptu_xform.transform) << std::endl;
-
-
-      // Save the pointcloud
-      pcl::PointCloud<pcl::PointXYZRGB> cloud;
-      pcl::fromROSMsg(*(frame.points), cloud);
-      pcl::io::savePCDFileBinary(pcd_file, cloud);
+      // Calibration plate corners
+      serialize_xform(csv_stream, frame.calibration_top_left.transform) << ",\t";
+      serialize_xform(csv_stream, frame.calibration_top_right.transform) << ",\t";
+      serialize_xform(csv_stream, frame.calibration_bottom_left.transform) << ",\t";
+      serialize_xform(csv_stream, frame.calibration_bottom_right.transform) << std::endl;
 
       // Save the image
       cv_bridge::CvImagePtr bridge = cv_bridge::toCvCopy(frame.image, sensor_msgs::image_encodings::BGR8);
@@ -240,10 +243,10 @@ public:
   {
     // Listen for ALL THE DATA!
     joint_states_sub.subscribe(nh, "/joint_states", 10);
-    raw_image_sub.subscribe(nh, "/kinect1/rgb/image_rect_color", 10);
-    pointcloud_sub.subscribe(nh, "/kinect1/depth_registered/points", 10);
+    raw_image_sub.subscribe(nh, "/kinect1/rgb/image_color", 10);
+    pixel_sub.subscribe(nh, "/aruco_tags/marker_pixels", 10);
     aruco_sub.subscribe(nh, "/aruco_tags/markers", 10);
-    channel.reset(new SyncChannel(SyncPolicy(20), joint_states_sub, raw_image_sub, pointcloud_sub, aruco_sub));
+    channel.reset(new SyncChannel(SyncPolicy(20), joint_states_sub, raw_image_sub, pixel_sub, aruco_sub));
     channel->registerCallback(&EyehandObserver::data_callback, this);
 
     // Spin service call in its own thread so it doesn't block
@@ -266,12 +269,12 @@ private:
   ros::NodeHandle nh;
   message_filters::Subscriber<sensor_msgs::JointState> joint_states_sub;
   message_filters::Subscriber<sensor_msgs::Image> raw_image_sub;
-  message_filters::Subscriber<sensor_msgs::PointCloud2> pointcloud_sub;
+  message_filters::Subscriber<geometry_msgs::PolygonStamped> pixel_sub;
   message_filters::Subscriber<aruco_msgs::MarkerArray> aruco_sub;
 
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::JointState,
                                                           sensor_msgs::Image,
-                                                          sensor_msgs::PointCloud2,
+                                                          geometry_msgs::PolygonStamped,
                                                           aruco_msgs::MarkerArray> SyncPolicy;
   typedef message_filters::Synchronizer<SyncPolicy> SyncChannel;
   std::shared_ptr<SyncChannel> channel;
@@ -295,10 +298,15 @@ private:
   struct BufferElement {
       sensor_msgs::JointState::ConstPtr states;
       sensor_msgs::Image::ConstPtr image;
-      sensor_msgs::PointCloud2::ConstPtr points;
+      geometry_msgs::PolygonStamped::ConstPtr pixels;
       aruco_msgs::MarkerArray::ConstPtr tags;
-      geometry_msgs::TransformStamped ee_xform;
-      geometry_msgs::TransformStamped ptu_xform;
+
+      // Position of all the corners of the calibration plate
+      // Relative to kinect1_link
+      geometry_msgs::TransformStamped calibration_top_left;
+      geometry_msgs::TransformStamped calibration_top_right;
+      geometry_msgs::TransformStamped calibration_bottom_left;
+      geometry_msgs::TransformStamped calibration_bottom_right;
   };
   typedef std::vector<BufferElement> DataBuffer;
   DataBuffer buffer;
