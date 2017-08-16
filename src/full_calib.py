@@ -24,7 +24,7 @@ Notes:
 Projection:
  * Must be Autodiff-able (so Numpy/Theano only)
  * Shape: Big array of projection transforms * Array of point
- * First cut: Just translate everything into kinect1_link frame beforehand
+ * First cut: Just translate everything into camera_link frame beforehand
 """
 
 import math
@@ -45,17 +45,17 @@ class TestDataGenerator(object):
         y = np.linspace(-0.2+0.025, 0.2+0.025, num=grid_size)
         x = np.linspace(0.5, 1.2, num=grid_size)
         g = np.meshgrid(x, y, z)
-        kin = np.stack(map(np.ravel, g))
-        np.concatenate([kin, np.ones([1, kin.shape[1]])])
+        cam = np.stack(map(np.ravel, g))
+        np.concatenate([cam, np.ones([1, cam.shape[1]])])
 
         # Compute all truth data in various frames
-        self.kinect_truth = kin
-        self.optical_truth = opt = toCameraFrame(kin, extrinsics)
+        self.camera_truth = cam
+        self.optical_truth = opt = toCameraFrame(cam, extrinsics)
         self.pixel_truth = cameraProjection(opt, intrinsics)
 
     def getCalibratorArgs(self):
         return (
-            self.kinect_truth,
+            self.camera_truth,
             self.pixel_truth,
             self.extrinsics,
             self.intrinsics
@@ -71,18 +71,18 @@ class DataReader(object):
             converters={2: lambda x: 0} # Read timestamps as 0
         )
 
-        #   * 3D points in kinect1 frame
-        self.kinect_points = np.concatenate([ # We stored them backwards...
+        #   * 3D points in camera_link frame
+        self.camera_points = np.concatenate([ # We stored them backwards...
             data[:, 43:46], # Top right
             data[:, 57:60], # Bottom right
             data[:, 50:53], # Bottom left
             data[:, 36:39]  # Top left
         ], axis=0).T        # We want 3 rows by N columns
-        self.kinect_points = np.concatenate([
-            self.kinect_points,
-            np.ones([1, self.kinect_points.shape[1]])
+        self.camera_points = np.concatenate([
+            self.camera_points,
+            np.ones([1, self.camera_points.shape[1]])
         ])
-        print "kinect_points:", self.kinect_points
+        print "camera_points:", self.camera_points
 
         #   * Corresponding pixel locations
         self.pixels = np.concatenate([
@@ -96,7 +96,7 @@ class DataReader(object):
         intrinsics = np.array([0, 0, 0, 0, 540, 540, 480, 270])
         extrinsics = np.array([0, 0, 0, 0, 0, 0, 1]) # [x, y, z, qx, qy, qz, qw]
 
-        #   * Initial guess for extrinsics (kinect1_link -> kinect1_rgb_frame)
+        #   * Initial guess for extrinsics (camera_link -> camera_rgb_frame)
         # self.extrinsics = np.array([0, -0.01, 0, 0, 0, 0, 1]) # Default guess
         self.extrinsics = extrinsics
 
@@ -105,7 +105,7 @@ class DataReader(object):
         self.intrinsics = intrinsics
 
         # Filtering
-        temp = toCameraFrame(self.kinect_points, extrinsics)
+        temp = toCameraFrame(self.camera_points, extrinsics)
         proj = cameraProjection(temp, intrinsics)
         print "Projected!", proj
 
@@ -119,33 +119,33 @@ class DataReader(object):
             else:
                 continue
             print "Bad pixel!"
-            print "pre:", self.kinect_points.T[i]
+            print "pre:", self.camera_points.T[i]
             print "proj:", pix
         print "Removing bad indicies:", idx
-        self.kinect_points = np.delete(self.kinect_points, idx, axis=1)
+        self.camera_points = np.delete(self.camera_points, idx, axis=1)
         self.pixels = np.delete(self.pixels, idx, axis=1)
 
     def get_data(self):
         return (
-            self.kinect_points,
+            self.camera_points,
             self.pixels,
             self.extrinsics,
             self.intrinsics
         )
 
 class SystemCalibrator(object):
-    def __init__(self, kinect_points, pixels, extrinsics, intrinsics):
+    def __init__(self, camera_points, pixels, extrinsics, intrinsics):
         """
-        kinect_points: XYZ coordinates of points, expressed in kinect1_link frame
-        pixels: pixel coordinates in kinect1/rgb/image_color (unrectified!)
+        camera_points: XYZ coordinates of points, expressed in camera_link frame
+        pixels: pixel coordinates in camera/rgb/image_color (unrectified!)
         extrinsics: initial guess of extrinsics
         intrinsics: initial guess of intrinsics
         """
         self.x0 = np.concatenate([extrinsics, intrinsics])
-        self.kinect_truth = kinect_points
+        self.camera_truth = camera_points
         self.pixel_truth = pixels
 
-        print "kinect:", self.kinect_truth
+        print "kinect:", self.camera_truth
         print "pixels:", self.pixel_truth
 
     def optimize(self, its=10000, acc=1e-12):
@@ -195,7 +195,7 @@ class SystemCalibrator(object):
         extrinsics = x[:7]
         intrinsics = x[7:]
 
-        optical_lies = toCameraFrame(self.kinect_truth, extrinsics)
+        optical_lies = toCameraFrame(self.camera_truth, extrinsics)
         pixel_lies = cameraProjection(optical_lies, intrinsics)
 
         # We want to minimize the distance of the projection from ground truth
@@ -240,19 +240,19 @@ def build_xform_mat(state):
     xform[:3, 3] = t
     return xform
 
-def toCameraFrame(kinect_points, state):
-    # Currently, this assumes all points are in kinect1_link frame
+def toCameraFrame(camera_points, state):
+    # Currently, this assumes all points are in camera_link frame
     # TODO: Add support for points in any frame
 
-    # From kinect1_link to kinect1_rgb_frame
-    kinect1_link_to_rgb = build_xform_mat(state)
+    # From camera_link to camera_rgb_frame
+    camera_link_to_rgb = build_xform_mat(state)
     rgb_points = np.dot(
-        np.linalg.inv(kinect1_link_to_rgb),
-        # kinect1_link_to_rgb,
-        kinect_points
+        np.linalg.inv(camera_link_to_rgb),
+        # camera_link_to_rgb,
+        camera_points
     )
 
-    # From kinect1_rgb_frame to kinect1_rgb_optical_frame
+    # From camera_rgb_frame to camera_rgb_optical_frame
     body_to_camera = transf.euler_matrix(-math.pi/2, 0, -math.pi/2, axes="sxyz")
     optical_points = np.dot(body_to_camera.T, rgb_points)
 
@@ -303,8 +303,8 @@ def cameraMats(fcs):
 
     return K, P
 
-def projectPoints(kinect_points, pixels, extrinsics, intrinsics):
-    temp = toCameraFrame(kinect_points, extrinsics)
+def projectPoints(camera_points, pixels, extrinsics, intrinsics):
+    temp = toCameraFrame(camera_points, extrinsics)
     pixels = cameraProjection(temp, intrinsics)
     return pixels
 
