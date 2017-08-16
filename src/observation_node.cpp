@@ -91,10 +91,10 @@ public:
     for (auto& frame : buffer)
     {
       // Grab the required transforms
-      frame.calibration_top_left = tfBuffer.lookupTransform("kinect1_link", "calibration_top_left", frame.states->header.stamp);
-      frame.calibration_top_right = tfBuffer.lookupTransform("kinect1_link", "calibration_top_right", frame.states->header.stamp);
-      frame.calibration_bottom_left = tfBuffer.lookupTransform("kinect1_link", "calibration_bottom_left", frame.states->header.stamp);
-      frame.calibration_bottom_right = tfBuffer.lookupTransform("kinect1_link", "calibration_bottom_right", frame.states->header.stamp);
+      frame.calibration_top_left = tfBuffer.lookupTransform(camera_link_, "calibration_top_left", frame.states->header.stamp);
+      frame.calibration_top_right = tfBuffer.lookupTransform(camera_link_, "calibration_top_right", frame.states->header.stamp);
+      frame.calibration_bottom_left = tfBuffer.lookupTransform(camera_link_, "calibration_bottom_left", frame.states->header.stamp);
+      frame.calibration_bottom_right = tfBuffer.lookupTransform(camera_link_, "calibration_bottom_right", frame.states->header.stamp);
     }
     std::cout << "Done!" << std::endl;
 
@@ -243,6 +243,7 @@ public:
     tfListener(tfBuffer)
   {
     // Parameters
+    nh.param<std::string>("camera_link", camera_link_, "kinect1_link");
     nh.param<std::string>("camera", camera_, "/kinect1/rgb");
     nh.param<std::string>("image", image_, "image_color");
 
@@ -274,7 +275,7 @@ public:
 
 private:
   // Parameters
-  std::string image_, camera_;
+  std::string image_, camera_, camera_link_;
 
   // Data listeners
   ros::NodeHandle nh;
@@ -313,7 +314,7 @@ private:
       aruco_msgs::MarkerArray::ConstPtr tags;
 
       // Position of all the corners of the calibration plate
-      // Relative to kinect1_link
+      // Relative to camera link
       geometry_msgs::TransformStamped calibration_top_left;
       geometry_msgs::TransformStamped calibration_top_right;
       geometry_msgs::TransformStamped calibration_bottom_left;

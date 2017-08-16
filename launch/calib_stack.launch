@@ -10,6 +10,7 @@
 
   <!-- observation node -->
     <node name="observation_node" pkg="eyehand_calib" type="observation_node" required="true" output="screen">
+      <param name="camera_link" value="kinect1_link"/>
       <param name="camera" value="/kinect1/ir"/>
       <param name="image" value="image_raw"/>
     </node>
