@@ -522,7 +522,7 @@ def main():
 
     config = {
         # Test control
-        "collect_data": False,
+        "collect_data": True,
         "move_robot": True,
         "save_ik": False,
         "load_ik": True,
@@ -534,7 +534,7 @@ def main():
 
         # Data collection
         "data_root": "/home/momap/momap_data/log_robot",
-        "experiment_suffix": "full_calib_ir",
+        "experiment_suffix": "kinect2_calib",
         "frame_count": 10,
 
         # Robot description

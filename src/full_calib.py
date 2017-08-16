@@ -29,7 +29,6 @@ Projection:
 
 import math
 import autograd.numpy as np
-from autograd import grad
 from scipy.optimize import minimize
 import tf.transformations as transf
 
@@ -94,7 +93,7 @@ class DataReader(object):
         ], axis=0).T        # We want 2 rows by N columns
         print "pixels:", self.pixels
 
-        intrinsics = np.array([0, 0, 0, 0, 525, 525, 310, 260])
+        intrinsics = np.array([0, 0, 0, 0, 540, 540, 480, 270])
         extrinsics = np.array([0, 0, 0, 0, 0, 0, 1]) # [x, y, z, qx, qy, qz, qw]
 
         #   * Initial guess for extrinsics (kinect1_link -> kinect1_rgb_frame)
@@ -153,7 +152,7 @@ class SystemCalibrator(object):
         # x0 = np.array([0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 500, 500,320, 240], dtype=np.float64)
         x0 = self.x0
 
-        spread = np.array([0.03, 0.03, 0.03, 0, 0, 0, 0, 0.3, 0.4,  0.3,  0.3,  100,  100,  100,  100])
+        spread = np.array([0.3, 0.3, 0.3, 0, 0, 0, 0, 0.3, 0.4,  0.3,  0.3,  100,  100,  100,  100])
         skip_idx = spread==0
         print "skip_idx", skip_idx
         bounds = zip(x0 - spread, x0 + spread)
@@ -182,7 +181,6 @@ class SystemCalibrator(object):
             x0,
             method="L-BFGS-B",
             bounds=bounds,
-            # jac=grad(self.objective), # Autograd unsupported :(
             constraints=constraints,
             callback=print_func,
             options=options
@@ -211,7 +209,7 @@ def quat_norm(idx):
     return {
         "type": "eq",
         "fun": c,
-        "jac": grad(c)
+        # "jac": grad(c)
     }
 
 def cone_threshold(idx, quat, thresh):
@@ -223,7 +221,7 @@ def cone_threshold(idx, quat, thresh):
     return {
         "type": "ineq",
         "fun": c,
-        "jac": grad(c)
+        # "jac": grad(c)
     }
 
 # Not good! Needs regularization since grad(x -> 0) -> infinity
@@ -318,7 +316,7 @@ if __name__=="__main__":
     # data = TestDataGenerator(grid_size, extrinsics, intrinsics).getCalibratorArgs()
 
     # Read data!
-    filename = "/home/momap/momap_data/log_robot/20170809/20170809T163531_full_calib_ir/20170809T163531_full_calib-merged.csv"
+    filename = "/home/momap/momap_data/log_robot/20170816/20170816T160945_kinect2_calib/20170816T160945_kinect2_calib-merged.csv"
     data = DataReader(filename).get_data()
     cal = SystemCalibrator(*data)
     result = cal.optimize()
@@ -348,5 +346,4 @@ if __name__=="__main__":
     K,P = cameraMats(result.x[-4:])
     print "K:", np.array2string(K.flatten(), separator=", ")
     print "P:", np.array2string(P.flatten(), separator=", ")
-
     print "D:", np.array2string(result.x[7:11], separator=", ")
