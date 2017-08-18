@@ -93,7 +93,7 @@ class DataReader(object):
         ], axis=0).T        # We want 2 rows by N columns
         print "pixels:", self.pixels
 
-        intrinsics = np.array([0, 0, 0, 0, 540, 540, 480, 270])
+        intrinsics = np.array([0, 0, 0, 0, 365, 365, 250, 200])
         extrinsics = np.array([0, 0, 0, 0, 0, 0, 1]) # [x, y, z, qx, qy, qz, qw]
 
         #   * Initial guess for extrinsics (camera_link -> camera_rgb_frame)
@@ -152,7 +152,7 @@ class SystemCalibrator(object):
         # x0 = np.array([0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 500, 500,320, 240], dtype=np.float64)
         x0 = self.x0
 
-        spread = np.array([0.3, 0.3, 0.3, 0, 0, 0, 0, 0.3, 0.4,  0.3,  0.3,  100,  100,  100,  100])
+        spread = np.array([0.3, 0.3, 0.3, 0, 0, 0, 0, 0.3, 0.4,  0.3,  0.3,  200,  200,  200,  100])
         skip_idx = spread==0
         print "skip_idx", skip_idx
         bounds = zip(x0 - spread, x0 + spread)
@@ -316,7 +316,7 @@ if __name__=="__main__":
     # data = TestDataGenerator(grid_size, extrinsics, intrinsics).getCalibratorArgs()
 
     # Read data!
-    filename = "/home/momap/momap_data/log_robot/20170816/20170816T160945_kinect2_calib/20170816T160945_kinect2_calib-merged.csv"
+    filename = "/home/momap/momap_data/log_robot/20170817/20170817T183837_kinect2_calib_ir/20170817T183837_kinect2_calib_ir-merged.csv"
     data = DataReader(filename).get_data()
     cal = SystemCalibrator(*data)
     result = cal.optimize()

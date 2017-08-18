@@ -534,12 +534,12 @@ def main():
 
         # Data collection
         "data_root": "/home/momap/momap_data/log_robot",
-        "experiment_suffix": "kinect2_calib",
+        "experiment_suffix": "kinect2_calib_ir",
         "frame_count": 10,
 
         # Robot description
         "ik_urdf": "/home/momap/momap/src/robot_core/robot_descriptions/momap_description/urdf/.momap_left_arm-drake.urdf",
-        "optical_frame": "kinect1_depth_optical_frame",
+        "optical_frame": "kinect2_ir_optical_frame",
 
         # IK persistence
         "ik_save_path": "full_calib_ik.save",
