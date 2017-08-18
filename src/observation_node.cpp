@@ -233,10 +233,33 @@ public:
       serialize_xform(csv_stream, frame.calibration_bottom_right.transform) << std::endl;
 
       // Save the image
-      cv_bridge::CvImagePtr bridge = cv_bridge::toCvCopy(frame.raw_image, sensor_msgs::image_encodings::BGR8);
+      cv_bridge::CvImageConstPtr bridge;
+      std::cout << "raw_image.encoding: " << frame.raw_image->encoding << std::endl;
+      if (frame.raw_image->encoding == "16UC1")
+      {
+        std::cout << "raw_image is 16UC1" << std::endl;
+        // NOTE: This is a problem with the cv_bridge package
+        bridge = cv_bridge::toCvShare(frame.raw_image, sensor_msgs::image_encodings::MONO16);
+      }
+      else
+      {
+        bridge = cv_bridge::toCvShare(frame.raw_image /*, sensor_msgs::image_encodings::BGR8*/);
+      }
+      std::cout << "Writing raw_image" << std::endl;
       cv::imwrite(raw_img_file, bridge->image);
 
-      bridge = cv_bridge::toCvCopy(frame.depth_image /*, sensor_msgs::image_encodings::MONO16*/); // NOTE: could be weird encoding
+      std::cout << "depth_image.encoding: " << frame.depth_image->encoding << std::endl;
+      if (frame.depth_image->encoding == "16UC1")
+      {
+        std::cout << "depth_image is 16UC1" << std::endl;
+        // NOTE: This is a problem with the cv_bridge package
+        bridge = cv_bridge::toCvShare(frame.depth_image, sensor_msgs::image_encodings::MONO16);
+      }
+      else
+      {
+        bridge = cv_bridge::toCvShare(frame.depth_image /*, sensor_msgs::image_encodings::BGR8*/);
+      }
+      std::cout << "Writing depth_image" << std::endl;
       cv::imwrite(depth_img_file, bridge->image);
     }
 
@@ -287,7 +310,7 @@ public:
 
 private:
   // Parameters
-  std::string image_, camera_, camera_link_;
+  std::string raw_image_, camera_, camera_link_;
   std::string depth_image_, depth_camera_;
 
   // Data listeners
