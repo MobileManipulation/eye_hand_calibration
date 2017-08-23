@@ -93,7 +93,7 @@ class DataReader(object):
         ], axis=0).T        # We want 2 rows by N columns
         print "pixels:", self.pixels
 
-        intrinsics = np.array([0, 0, 0, 0, 365, 365, 250, 200])
+        intrinsics = np.array([0, 0, 0, 0, 580, 580, 313, 242])
         extrinsics = np.array([0, 0, 0, 0, 0, 0, 1]) # [x, y, z, qx, qy, qz, qw]
 
         #   * Initial guess for extrinsics (camera_link -> camera_rgb_frame)
@@ -316,7 +316,7 @@ if __name__=="__main__":
     # data = TestDataGenerator(grid_size, extrinsics, intrinsics).getCalibratorArgs()
 
     # Read data!
-    filename = "/home/momap/momap_data/log_robot/20170817/20170817T183837_kinect2_calib_ir/20170817T183837_kinect2_calib_ir-merged.csv"
+    filename = "/home/momap/momap_data/log_robot/20170823/20170823T191849_kinect1_calib_ir/20170823T191849_kinect1_calib_ir-merged.csv"
     data = DataReader(filename).get_data()
     cal = SystemCalibrator(*data)
     result = cal.optimize()
