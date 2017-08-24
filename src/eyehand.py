@@ -522,7 +522,7 @@ def main():
 
     config = {
         # Test control
-        "collect_data": False,
+        "collect_data": True,
         "move_robot": True,
         "save_ik": False,
         "load_ik": True,
@@ -534,12 +534,12 @@ def main():
 
         # Data collection
         "data_root": "/home/momap/momap_data/log_robot",
-        "experiment_suffix": "full_calib_ir",
+        "experiment_suffix": "kinect1_calib_rgb",
         "frame_count": 10,
 
         # Robot description
         "ik_urdf": "/home/momap/momap/src/robot_core/robot_descriptions/momap_description/urdf/.momap_left_arm-drake.urdf",
-        "optical_frame": "kinect1_depth_optical_frame",
+        "optical_frame": "kinect1_rgb_optical_frame",
 
         # IK persistence
         "ik_save_path": "full_calib_ik.save",

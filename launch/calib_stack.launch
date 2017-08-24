@@ -1,17 +1,20 @@
 <launch>
   <!-- aruco tags -->
     <node name="aruco_tags" pkg="aruco_ros" type="marker_publisher"
-          required="true" output="screen">
-      <param name="camera_frame" value="kinect1_depth_optical_frame"/>
-      <param name="camera" value="/kinect1/ir"/>
+          required="true" output="log">
+      <param name="camera_frame" value="kinect1_rgb_optical_frame"/>
+
+      <param name="camera" value="/kinect1/rgb"/>
       <param name="image" value="image_raw"/>
-      <param name="detect_ir" value="true"/>
     </node>
 
   <!-- observation node -->
     <node name="observation_node" pkg="eyehand_calib" type="observation_node" required="true" output="screen">
-      <param name="camera_link" value="kinect1_link"/>
-      <param name="camera" value="/kinect1/ir"/>
+      <param name="camera" value="/kinect1/rgb"/>
       <param name="image" value="image_raw"/>
+      <param name="camera_link" value="kinect1_link"/>
+
+      <param name="depth_camera" value="/kinect1/depth"/>
+      <param name="depth_image" value="image_raw"/>
     </node>
 </launch>

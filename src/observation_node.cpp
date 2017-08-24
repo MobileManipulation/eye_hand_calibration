@@ -39,7 +39,8 @@ class EyehandObserver
 {
 public:
   void data_callback(const sensor_msgs::JointState::ConstPtr& states,
-                     const sensor_msgs::Image::ConstPtr& image,
+                     const sensor_msgs::Image::ConstPtr& raw_image,
+                     const sensor_msgs::Image::ConstPtr& depth_image,
                      const geometry_msgs::PolygonStamped::ConstPtr& pixels,
                      const aruco_msgs::MarkerArray::ConstPtr& tags)
   {
@@ -48,7 +49,8 @@ public:
 
     // Put data in buffer
     buffer[current_frame].states = states;
-    buffer[current_frame].image = image;
+    buffer[current_frame].raw_image = raw_image;
+    buffer[current_frame].depth_image = depth_image;
     buffer[current_frame].pixels = pixels;
     buffer[current_frame].tags = tags;
 
@@ -181,9 +183,11 @@ public:
     for (uint16_t frame_id = 0; frame_id < buffer.size(); frame_id++)
     {
       // Create frame-specific filenames
-      std::string img_file = create_filename(dp_dir, req.data_point, frame_id, image_ + ".png");
+      std::string raw_img_file = create_filename(dp_dir, req.data_point, frame_id, raw_image_ + ".png");
+      std::string depth_img_file = create_filename(dp_dir, req.data_point, frame_id, depth_image_ + "_depth.png");
 
-      std::cout << img_file << std::endl;
+      std::cout << "Raw image: " << raw_img_file << std::endl;
+      std::cout << "Depth image: " << depth_img_file << std::endl;
 
       auto& frame = buffer[frame_id];
 
@@ -229,8 +233,34 @@ public:
       serialize_xform(csv_stream, frame.calibration_bottom_right.transform) << std::endl;
 
       // Save the image
-      cv_bridge::CvImagePtr bridge = cv_bridge::toCvCopy(frame.image, sensor_msgs::image_encodings::BGR8);
-      cv::imwrite(img_file, bridge->image);
+      cv_bridge::CvImageConstPtr bridge;
+      std::cout << "raw_image.encoding: " << frame.raw_image->encoding << std::endl;
+      if (frame.raw_image->encoding == "16UC1")
+      {
+        std::cout << "raw_image is 16UC1" << std::endl;
+        // NOTE: This is a problem with the cv_bridge package
+        bridge = cv_bridge::toCvShare(frame.raw_image, sensor_msgs::image_encodings::TYPE_16UC1);
+      }
+      else
+      {
+        bridge = cv_bridge::toCvShare(frame.raw_image /*, sensor_msgs::image_encodings::BGR8*/);
+      }
+      std::cout << "Writing raw_image" << std::endl;
+      cv::imwrite(raw_img_file, bridge->image);
+
+      std::cout << "depth_image.encoding: " << frame.depth_image->encoding << std::endl;
+      if (frame.depth_image->encoding == "16UC1")
+      {
+        std::cout << "depth_image is 16UC1" << std::endl;
+        // NOTE: This is a problem with the cv_bridge package
+        bridge = cv_bridge::toCvShare(frame.depth_image, sensor_msgs::image_encodings::TYPE_16UC1);
+      }
+      else
+      {
+        bridge = cv_bridge::toCvShare(frame.depth_image /*, sensor_msgs::image_encodings::BGR8*/);
+      }
+      std::cout << "Writing depth_image" << std::endl;
+      cv::imwrite(depth_img_file, bridge->image);
     }
 
     // Close main CSV
@@ -245,16 +275,21 @@ public:
     // Parameters
     nh.param<std::string>("camera_link", camera_link_, "kinect1_link");
     nh.param<std::string>("camera", camera_, "/kinect1/rgb");
-    nh.param<std::string>("image", image_, "image_color");
+    nh.param<std::string>("image", raw_image_, "image_color");
 
-    std::string image_topic = camera_ + "/" + image_;
+    nh.param<std::string>("depth_camera", depth_camera_, "/kinect1/depth");
+    nh.param<std::string>("depth_image", depth_image_, "image_raw");
+
+    std::string raw_image_topic = camera_ + "/" + raw_image_;
+    std::string depth_image_topic = depth_camera_ + "/" + depth_image_;
 
     // Listen for ALL THE DATA!
     joint_states_sub.subscribe(nh, "/joint_states", 10);
-    raw_image_sub.subscribe(nh, image_topic, 10);
+    raw_image_sub.subscribe(nh, raw_image_topic, 10);
+    depth_image_sub.subscribe(nh, depth_image_topic, 10);
     pixel_sub.subscribe(nh, "/aruco_tags/marker_pixels", 10);
     aruco_sub.subscribe(nh, "/aruco_tags/markers", 10);
-    channel.reset(new SyncChannel(SyncPolicy(20), joint_states_sub, raw_image_sub, pixel_sub, aruco_sub));
+    channel.reset(new SyncChannel(SyncPolicy(20), joint_states_sub, raw_image_sub, depth_image_sub, pixel_sub, aruco_sub));
     channel->registerCallback(&EyehandObserver::data_callback, this);
 
     // Spin service call in its own thread so it doesn't block
@@ -275,16 +310,19 @@ public:
 
 private:
   // Parameters
-  std::string image_, camera_, camera_link_;
+  std::string raw_image_, camera_, camera_link_;
+  std::string depth_image_, depth_camera_;
 
   // Data listeners
   ros::NodeHandle nh;
   message_filters::Subscriber<sensor_msgs::JointState> joint_states_sub;
   message_filters::Subscriber<sensor_msgs::Image> raw_image_sub;
+  message_filters::Subscriber<sensor_msgs::Image> depth_image_sub;
   message_filters::Subscriber<geometry_msgs::PolygonStamped> pixel_sub;
   message_filters::Subscriber<aruco_msgs::MarkerArray> aruco_sub;
 
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::JointState,
+                                                          sensor_msgs::Image,
                                                           sensor_msgs::Image,
                                                           geometry_msgs::PolygonStamped,
                                                           aruco_msgs::MarkerArray> SyncPolicy;
@@ -309,7 +347,8 @@ private:
   // Data management
   struct BufferElement {
       sensor_msgs::JointState::ConstPtr states;
-      sensor_msgs::Image::ConstPtr image;
+      sensor_msgs::Image::ConstPtr raw_image;
+      sensor_msgs::Image::ConstPtr depth_image;
       geometry_msgs::PolygonStamped::ConstPtr pixels;
       aruco_msgs::MarkerArray::ConstPtr tags;
 
