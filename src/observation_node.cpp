@@ -184,7 +184,7 @@ public:
     {
       // Create frame-specific filenames
       std::string raw_img_file = create_filename(dp_dir, req.data_point, frame_id, raw_image_ + ".png");
-      std::string depth_img_file = create_filename(dp_dir, req.data_point, frame_id, depth_image_ + ".png");
+      std::string depth_img_file = create_filename(dp_dir, req.data_point, frame_id, depth_image_ + "_depth.png");
 
       std::cout << "Raw image: " << raw_img_file << std::endl;
       std::cout << "Depth image: " << depth_img_file << std::endl;
@@ -239,7 +239,7 @@ public:
       {
         std::cout << "raw_image is 16UC1" << std::endl;
         // NOTE: This is a problem with the cv_bridge package
-        bridge = cv_bridge::toCvShare(frame.raw_image, sensor_msgs::image_encodings::MONO16);
+        bridge = cv_bridge::toCvShare(frame.raw_image, sensor_msgs::image_encodings::TYPE_16UC1);
       }
       else
       {
@@ -253,7 +253,7 @@ public:
       {
         std::cout << "depth_image is 16UC1" << std::endl;
         // NOTE: This is a problem with the cv_bridge package
-        bridge = cv_bridge::toCvShare(frame.depth_image, sensor_msgs::image_encodings::MONO16);
+        bridge = cv_bridge::toCvShare(frame.depth_image, sensor_msgs::image_encodings::TYPE_16UC1);
       }
       else
       {
