@@ -20,3 +20,7 @@ computes the average location of the arm at each point in time, as measured by b
 tags and forward kinematics, and cleverly crops the point cloud down to include only the
 points from the calibration plate. It also computes a combined point cloud from all frames
 of a given datapoint, and performs and ICP fit of a plane to the data.
+
+## Generating the Calibration URDF
+Running "go.sh calibration" in momap_descriptions will generate the correct URDF for calibration
+
