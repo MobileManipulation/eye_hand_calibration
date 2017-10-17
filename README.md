@@ -1,5 +1,7 @@
 # eye\_hand\_calibration
 
+WARNING - this code requires several other ROS nodes to run - currently UNDER CONSTRUCTION
+
 This repository contains tools for performing eye-hand calibration on the KUKA arm
 with PTU/Kinect head. It consists of two tools:
 
@@ -26,7 +28,7 @@ Running "go.sh calibration" in momap_descriptions will generate the correct URDF
 
 Collection script information
 -----------------------------
-The eyehand_calib repo (ROS package) is in archive.tgz.
+The eye_hand_calibration repo (ROS package) is in archive.tgz.
 
 To run the data collection again, use these commands after initalizing
 the robot drivers and the kinect perception stack:
