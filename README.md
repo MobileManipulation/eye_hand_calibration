@@ -1,4 +1,4 @@
-# eyehand\_calib
+# eye\_hand\_calibration
 
 This repository contains tools for performing eye-hand calibration on the KUKA arm
 with PTU/Kinect head. It consists of two tools:
