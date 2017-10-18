@@ -1,2 +1,3 @@
 *.pyc
 snopt.out
+*DS_Store
