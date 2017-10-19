@@ -1,0 +1,3 @@
+[submodule "aruco_pipeline"]
+	path = aruco_pipeline
+	url = https://github.com/MobileManipulation/aruco_pipeline.git
