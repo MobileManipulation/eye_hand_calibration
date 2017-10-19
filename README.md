@@ -15,6 +15,8 @@ This control script delegates the data collection task to a C++ observation node
 node collects as much state as possible about the position of the arm at every position,
 to be used for later calibration processing.
 
+![Example showing robot during calibration](calibration_rviz_example.png)
+
 ## Data Baking Tool
 
 This tool performs several post-processing tasks on the raw data collected above. Namely, it
