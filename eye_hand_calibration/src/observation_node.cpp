@@ -1,7 +1,7 @@
 #include <ros/ros.h>
 #include <ros/callback_queue.h>
 
-#include <eyehand_calib/Capture.h>
+#include <eye_hand_calibration/Capture.h>
 #include <sensor_msgs/JointState.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -58,7 +58,7 @@ public:
     capture_active = (current_frame < frame_count);
   }
 
-  bool init_capture(eyehand_calib::CaptureRequest& req, eyehand_calib::CaptureResponse& res)
+  bool init_capture(eye_hand_calibration::CaptureRequest& req, eye_hand_calibration::CaptureResponse& res)
   {
     std::cout << "Starting capture: " << req.frame_count << std::endl;
     if (capture_active) return false;
@@ -158,7 +158,7 @@ public:
     }
   }
 
-  void serialize_data(const eyehand_calib::CaptureRequest& req)
+  void serialize_data(const eye_hand_calibration::CaptureRequest& req)
   {
     // Format datapoint number like this: 042
     std::ostringstream dp;

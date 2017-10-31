@@ -17,7 +17,7 @@ from perception_interfaces.utils.transform_helper import *
 import rospy
 import tf2_ros
 from tf2_geometry_msgs import PoseStamped, do_transform_pose
-from eyehand_calib.srv import *
+from eye_hand_calibration.srv import *
 from robot_msgs.srv import *
 
 import pydrake
