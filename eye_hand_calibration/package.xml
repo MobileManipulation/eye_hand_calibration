@@ -1,6 +1,6 @@
 <?sml version="1.0"?>
 <package format="2">
-  <name>eyehand_calib</name>
+  <name>eye_hand_calibration</name>
   <version>0.1.0</version>
   <description>
      A data-collection tool for eye-hand calibration of the KUKA.
