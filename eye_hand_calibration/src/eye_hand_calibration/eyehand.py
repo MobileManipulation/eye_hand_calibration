@@ -8,7 +8,7 @@ This script requires Spartan / Draper Drake.
 
 # For robot motion
 import rospy
-from eyehand_calib.srv import *
+from eye_hand_calibration.srv import *
 from robot_msgs.srv import *
 from trajectory_msgs.msg import JointTrajectoryPoint
 
