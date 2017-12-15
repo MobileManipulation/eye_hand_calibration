@@ -62,3 +62,5 @@ calib_target(observation_node)
 calib_target(crop_pointcloud)
 calib_target(csv_merge1)
 calib_target(plane_fit)
+
+add_dependencies(observation_node ${catkin_EXPORTED_TARGETS})
