@@ -277,10 +277,13 @@ def main():
     for i, pose in enumerate(orbiter.poses):
         print i
         if (orbiter.go_to_pose(pose)):
-            target_realsense_frame = tracker.track_for(1)
+            # target_realsense_frame = tracker.track_for(1)
+            target_realsense_frame = tracker.track_tag_in_optical(1)
             keep = query_yes_no("keep this data point?")
             if keep:
+                tracker.keep_transforms()
                 print target_realsense_frame
+    tracker.publish_transforms()
 
 if __name__=="__main__":
     main()
