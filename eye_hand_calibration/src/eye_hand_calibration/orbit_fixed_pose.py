@@ -84,6 +84,8 @@ class Orbiter(object):
         print "ROS stack ready!"
         print
 
+        self.poses = self.generatePoses(self.config["max_poses"])
+
     def generatePoses(self, max_poses):
         """
         Generates poses relative to the target to move to.
@@ -167,79 +169,7 @@ class Orbiter(object):
         print
         return result.q_sol[0]
 
-    def trajectoryIK(self, start, end):
-        print "Moving along trajectory!"
-        print "Start:", start
-        print "End:",end
-
-        dur = self.config["trajectory_duration"]
-
-        joints = np.array(
-            [self.positions[joint] for joint in self.joint_names],
-            dtype=np.int32
-        ).reshape(9, 1)
-
-        constraints = list()
-        # Constrain the start position
-        start_pose = np.concatenate(start).reshape(9, 1)
-        start_constraint = ik.PostureConstraint( self.robot,
-            np.array([0.0, 0.0]).reshape([2,1])    # Active time
-        )
-        start_constraint.setJointLimits(
-            joints,
-            start_pose - self.config['pose_tol'],
-            start_pose + self.config['pose_tol']
-        )
-        constraints.append(start_constraint)
-
-        # Constrain the end position
-        end_pose = np.concatenate(end).reshape(9, 1)
-        end_constraint = ik.PostureConstraint( self.robot,
-            np.array([dur, dur]).reshape([2,1])    # Active time
-        )
-        end_constraint.setJointLimits(
-            joints,
-            end_pose - self.config['pose_tol'],
-            end_pose + self.config['pose_tol']
-        )
-        constraints.append(end_constraint)
-
-        # Constrain against collisions
-        constraints.append( ik.MinDistanceConstraint ( self.robot,
-            self.config['collision_min_distance'],   # Minimum distance between bodies
-            list(),                                  # Active bodies (empty set means all bodies)
-            set()                                    # Active collision groups (not filter groups! Empty set means all)
-        ))
-
-        # Prepare times of interest for trajectory solve
-        times = np.linspace(0, dur, num=self.config['trajectory_count'], endpoint=True)
-
-        # Compute cubic interpolation as seed trajectory
-        x = np.array([0, dur])
-        y = np.hstack([start_pose, end_pose])
-        f = CubicSpline(x, y, axis=1, bc_type='clamped')
-        q_seed = f(times)
-        # print "q_seed:", q_seed
-
-        # Solve the IK problem
-        options = ik.IKoptions(self.robot)
-        # options.setMajorIterationsLimit(400)
-        options.setFixInitialState(True)
-        # print "Iterations limit:", options.getMajorIterationsLimit()
-        result = ik.InverseKinTraj(self.robot, times, q_seed, q_seed, constraints, options)
-
-        if result.info[0] != 1:
-            print "Could not find safe trajectory!"
-            print "Start pose:", start_pose.flatten()
-            print "End pose:  ", end_pose.flatten()
-            print "Result:", result.info
-            return None
-        else:
-            # Clean up: Pack solutions as a matrix, with time as first column
-            q_sol = np.vstack(result.q_sol)
-            q_sol = np.insert(q_sol, [0], times[:, None], axis=1)
-
-            return q_sol
+    
 
     def moveRobot(self, head_pose, arm_pose):
         # Get current robot configuration
@@ -255,49 +185,11 @@ class Orbiter(object):
         resp = self.go_to_service(GoToConfRequest(robotConf, 0.0))
         return np.concatenate([resp.conf.robotHead, resp.conf.robotRightArm])
 
-    def moveRobotSafe(self, goal):
-        # Get current robot configuration
-        robotConf = self.conf_service().conf
-        start = (robotConf.robotHead, robotConf.robotRightArm)
-        end = (robotConf.robotHead, goal[2:])
-
-        traj = self.trajectoryIK(start, end)
-        if traj is None:
-            print "Could not find a safe trajectory!"
-        else:
-            self.followTrajectory(traj)
-
-    def followTrajectory(self, traj):
-        # Generate ROS trajectory message
-        # Don't send head pose! plan_runner freaks out
-        msg = SendJointTrajectoryRequest()
-        msg.trajectory.header.stamp = rospy.Time.now()
-        msg.trajectory.header.seq = 0
-        msg.trajectory.joint_names = self.joint_names[2:]
-        for sol in traj:
-            # print "sol:", sol
-            point = JointTrajectoryPoint()
-            point.time_from_start = rospy.Duration(sol[0])
-            point.positions = sol[3:]
-            point.velocities = [0.0]*len(point.positions)
-            point.accelerations = [0.0]*len(point.positions)
-            point.effort = [0.0]*len(point.positions)
-            msg.trajectory.points.append(point)
-
-        # Generate ROS head message
-        # All the head poses are the same -- just use the last one
-        # print "Moving head to pose:", traj[-1, 1:3]
-        head_msg = MoveHeadRequest(traj[-1, 1:3])
-        self.move_head_service(head_msg)
-
-        # Call SendTrajectory service
-        self.traj_service(msg)
-
     def orbit(self):
-        poses = self.generatePoses(self.config["max_poses"])
+        # poses = self.generatePoses(self.config["max_poses"])
 
         # Generate IK solutions
-        for pose in poses:
+        for pose in self.poses:
             # Quat order is WXYZ
             q_sol = self.solveIK(pose, self.target)
 
@@ -309,7 +201,21 @@ class Orbiter(object):
                 # print ""
                 self.moveRobot(q_sol[0:1], q_sol[2:])
 
-#Target: [ 0.71647249  0.82243126  0.6550977   0.2938065   0.3060845   0.63136176   0.649132  ]
+    def go_to_pose(self, pose):
+
+        # Generate IK solutions
+        q_sol = self.solveIK(pose, self.target)
+
+            # Move robot between solutions
+        if q_sol is not None:
+            # self.moveRobotSafe(q_sol)
+            # print ""
+            # print q_sol
+            # print ""
+            self.moveRobot(q_sol[0:1], q_sol[2:])
+            return True
+        else:
+            return False
 
 
 def main():
@@ -356,16 +262,25 @@ def main():
     print "Using TagTracker to select initial position"
     tracker = TagTracker(tracker_config)
 
-    yep = True
-    target = None
-    while yep:
-        target = tracker.track_for(1)
-        print "Target:", target
-        yep = query_yes_no("Track again?")
+    # yep = True
+    # target = None
+    # while yep:
+    #     target = tracker.track_for(1)
+    #     print "Target:", target
+    #     yep = query_yes_no("Track again?")
+
+    target = np.array([0.71647249, 0.82243126, 0.6550977, 0.2938065, 0.3060845, 0.63136176, 0.649132])
+
 
     orbiter = Orbiter(orbit_config, target)
     raw_input("Press [Enter] when ready to orbit!")
-    orbiter.orbit()
+    for i, pose in enumerate(orbiter.poses):
+        print i
+        if (orbiter.go_to_pose(pose)):
+            target_realsense_frame = tracker.track_for(1)
+            keep = query_yes_no("keep this data point?")
+            if keep:
+                print target_realsense_frame
 
 if __name__=="__main__":
     main()

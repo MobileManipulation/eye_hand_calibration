@@ -1,9 +1,10 @@
 <launch>
   <!-- aruco tags -->
     <node name="aruco_tags" pkg="aruco_ros" type="marker_publisher"
-          required="true" args="realsense" output="log">
+          required="true" args="realsense" output="screen"> 
+          <!-- realsense or kinect1 -->
       <param name="camera_frame" value="_rgb_optical_frame"/>
       <param name="camera" value="/rgb"/>
-      <param name="image" value="image_raw"/>
+      <param name="image" value="image_color"/>
     </node>
 </launch>
