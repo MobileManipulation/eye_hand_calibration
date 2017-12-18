@@ -1,0 +1,11 @@
+
+# tf frames
+world_frame: "world"
+kinect_frame: "kinect1_rgb_optical_frame"
+realsense_frame: "realsense_rgb_optical_frame"
+kinect_aruco_topic: "/aruco_tags_kinect/kinect1/aruco_tags/markers"
+realsense_aruco_topic: "/aruco_tags_realsense/realsense/aruco_tags/markers"
+compute_delta_srv_name: "compute_delta_srv"
+
+# Whether to track the object initially (or wait for an initialization from BHPN)
+track_obj: true

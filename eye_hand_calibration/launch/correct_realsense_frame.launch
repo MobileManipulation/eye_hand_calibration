@@ -1,0 +1,10 @@
+<!-- Launch file for starting the hand labeling pipeline -->
+<launch>
+
+  <!-- Load the parameters -->
+  <!-- <rosparam command="load" file="$(find live_torch)/live_torch_gen_params.yaml"/>
+  <rosparam command="load" file="$(find live_torch)/live_torch_ros_params.yaml"/> -->
+  <rosparam command="load" file="$(find eye_hand_calibration)/data/correct_realsense_frame.yaml"/>
+
+  <node name="correct_realsense_frame" pkg="eye_hand_calibration" type="correct_realsense_frame" respawn="true" output="screen"/>
+</launch>

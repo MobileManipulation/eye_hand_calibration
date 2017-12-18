@@ -246,7 +246,7 @@ def main():
         "optical_frame": "realsense_rgb_optical_frame", 
 
         # Pose generation
-        "max_poses": 30,
+        "max_poses": 100,
         "pose_lb": np.array([math.pi/4, -3*math.pi/4, 0.5]),
         "pose_ub": np.array([math.pi/2, 3*math.pi/4, 0.9]),
 
@@ -269,10 +269,10 @@ def main():
     #     print "Target:", target
     #     yep = query_yes_no("Track again?")
 
-    target = np.array([0.71647249, 0.82243126, 0.6550977, 0.2938065, 0.3060845, 0.63136176, 0.649132])
+    fixed_obj_pose_to_orbit = np.array([0.71647249, 0.82243126, 0.6550977, 0.2938065, 0.3060845, 0.63136176, 0.649132])
 
 
-    orbiter = Orbiter(orbit_config, target)
+    orbiter = Orbiter(orbit_config, fixed_obj_pose_to_orbit)
     raw_input("Press [Enter] when ready to orbit!")
     for i, pose in enumerate(orbiter.poses):
         print i

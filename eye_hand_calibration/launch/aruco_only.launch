@@ -1,0 +1,10 @@
+<launch>
+  <!-- aruco tags -->
+    <node name="aruco_tags" pkg="aruco_ros" type="marker_publisher"
+          required="true" output="log">
+      <param name="camera_frame" value="realsense_rgb_optical_frame"/>
+
+      <param name="camera" value="/realsense/rgb"/>
+      <param name="image" value="image_rect_raw"/>
+    </node>
+</launch>

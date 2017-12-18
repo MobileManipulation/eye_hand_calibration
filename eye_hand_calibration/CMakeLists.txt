@@ -5,6 +5,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   tf
+  tf_conversions
   std_msgs
   sensor_msgs
   geometry_msgs
@@ -21,6 +22,8 @@ find_package(PCL 1.8 REQUIRED COMPONENTS
   segmentation
 )
 find_package(OpenCV REQUIRED)
+find_package(Eigen3 REQUIRED)
+add_definitions(-std=c++11)
 
 add_service_files(FILES
   Capture.srv
@@ -32,6 +35,7 @@ catkin_package(
   #INCLUDE_DIRS include
  # LIBRARIES
 )
+include_directories(include)
 
 macro(calib_target target_name)
   add_executable(${target_name} src/${target_name}.cpp)
@@ -62,5 +66,11 @@ calib_target(observation_node)
 calib_target(crop_pointcloud)
 calib_target(csv_merge1)
 calib_target(plane_fit)
+
+include_directories( ${Eigen_INCLUDE_DIRS} )
+include_directories(${catkin_INCLUDE_DIRS})
+
+add_executable (correct_realsense_frame src/correct_realsense_frame.cpp)
+target_link_libraries (correct_realsense_frame ${Eigen_LIBRARIES} ${catkin_LIBRARIES})
 
 add_dependencies(observation_node ${catkin_EXPORTED_TARGETS})
