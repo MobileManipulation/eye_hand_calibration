@@ -281,9 +281,11 @@ def main():
             target_realsense_frame = tracker.track_tag_in_optical(1)
             keep = query_yes_no("keep this data point?")
             if keep:
-                tracker.keep_transforms()
+                tracker.publish_transforms()
                 print target_realsense_frame
-    tracker.publish_transforms()
+    # while(1):
+    #     tracker.publish_transforms()
+    #     rospy.sleep(0.1)
 
 if __name__=="__main__":
     main()

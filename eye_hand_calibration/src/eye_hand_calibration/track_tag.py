@@ -26,7 +26,7 @@ from pydrake.solvers import ik
 import numpy as np
 from eyehand_utils import query_yes_no
 
-from visp_hand2eye_calibration import TransformArray
+from visp_hand2eye_calibration.msg import TransformArray
 
 class TagTracker(object):
     def __init__(self, config):
@@ -40,8 +40,8 @@ class TagTracker(object):
         self.w_T_hand_array = TransformArray()
 
         # Publishers for visp_hand2eye_calibration
-        self.w_T_hand_pub = rospy.Publisher("/world_effector", TransformArray, queue_size=1000)
-        self.cam_T_target_pub = rospy.Publisher("/camera_object", TransformArray, queue_size=1000)
+        self.w_T_hand_pub = rospy.Publisher("/world_effector", Transform, queue_size=1000)
+        self.cam_T_target_pub = rospy.Publisher("/camera_object", Transform, queue_size=1000)
 
         # Initialize robot
         print "Loading URDF..."
@@ -87,107 +87,54 @@ class TagTracker(object):
         print "ROS stack ready!"
         print
 
-    def markerToWorldFrame(self, marker):
-        # Massage the data into a reasonable format
-        p = PoseStamped()
-        p.header = marker.header
-        p.pose = marker.pose.pose
-
-        # Transform pose to world frame (ROS)
-        transform = self.tf_buffer.lookup_transform("world",
-                        p.header.frame_id, #source frame
-                        rospy.Time(0),
-                        rospy.Duration(1.0)) #wait for 1 second
-        pose_transformed = do_transform_pose(p, transform)
-
-        # Publish pose as debug transform
+    # Publish the aruco detection as a tf in cam frame and store the transform
+    def publish_aruco_as_tf(self,marker):
         t = TransformStamped()
         t.header = marker.header
-        t.header.frame_id = "world"
         t.child_frame_id = "aruco_track"
-        t.transform.translation.x = pose_transformed.pose.position.x
-        t.transform.translation.y = pose_transformed.pose.position.y
-        t.transform.translation.z = pose_transformed.pose.position.z
-        t.transform.rotation.x = pose_transformed.pose.orientation.x
-        t.transform.rotation.y = pose_transformed.pose.orientation.y
-        t.transform.rotation.z = pose_transformed.pose.orientation.z
-        t.transform.rotation.w = pose_transformed.pose.orientation.w
+        t.transform.translation.x = marker.pose.pose.position.x
+        t.transform.translation.y = marker.pose.pose.position.y
+        t.transform.translation.z = marker.pose.pose.position.z
+        t.transform.rotation.x = marker.pose.pose.orientation.x
+        t.transform.rotation.y = marker.pose.pose.orientation.y
+        t.transform.rotation.z = marker.pose.pose.orientation.z
+        t.transform.rotation.w = marker.pose.pose.orientation.w
+        self.cam_T_target = t.transform
         self.tf_broadcaster.sendTransform(t)
+        print 'cam_T_target:\n', self.cam_T_target.translation
+
+    # Get the camera pose in world frame
+    def get_w_T_cam(self, marker):
+        # Transform pose to world frame (ROS)
+        w_T_cam = self.tf_buffer.lookup_transform("world",
+                        marker.header.frame_id, #source frame
+                        rospy.Time(0),
+                        rospy.Duration(1.0)) #wait for 1 second
 
         # Grab pose as a vector
-        target = np.array([
-            pose_transformed.pose.position.x,
-            pose_transformed.pose.position.y,
-            pose_transformed.pose.position.z,
-            pose_transformed.pose.orientation.w,
-            pose_transformed.pose.orientation.x,
-            pose_transformed.pose.orientation.y,
-            pose_transformed.pose.orientation.z
+        w_T_cam_vec = np.array([
+            w_T_cam.transform.translation.x,
+            w_T_cam.transform.translation.y,
+            w_T_cam.transform.translation.z,
+            w_T_cam.transform.rotation.w,
+            w_T_cam.transform.rotation.x,
+            w_T_cam.transform.rotation.y,
+            w_T_cam.transform.rotation.z
         ])
 
-        return target
+        print 'w_T_cam:\n', w_T_cam.transform.translation
 
-    def get_cam_2_target(self, marker):
-        # Massage the data into a reasonable format
-        p = PoseStamped()
-        p.header = marker.header
-        p.pose = marker.pose.pose
+        return w_T_cam_vec
 
+    # Store the w_T_hand transform
+    def store_w_T_hand(self, marker):
         # Transform pose to world frame (ROS)
-        transform = self.tf_buffer.lookup_transform("realsense_rgb_optical_frame",
-                        p.header.frame_id, #source frame
-                        rospy.Time(0),
-                        rospy.Duration(1.0)) #wait for 1 second
-        pose_transformed = do_transform_pose(p, transform)
-
-        # Publish pose as debug transform
-        t = TransformStamped()
-        t.header = marker.header
-        t.header.frame_id = "realsense_rgb_optical_frame"
-        t.child_frame_id = "aruco_track_from_realsense"
-        t.transform.translation.x = pose_transformed.pose.position.x
-        t.transform.translation.y = pose_transformed.pose.position.y
-        t.transform.translation.z = pose_transformed.pose.position.z
-        t.transform.rotation.x = pose_transformed.pose.orientation.x
-        t.transform.rotation.y = pose_transformed.pose.orientation.y
-        t.transform.rotation.z = pose_transformed.pose.orientation.z
-        t.transform.rotation.w = pose_transformed.pose.orientation.w
-        self.tf_broadcaster.sendTransform(t)
-        self.cam_T_target = t.transform
-
-        # Transform pose to world frame (ROS)
-        transform = self.tf_buffer.lookup_transform("world",
+        w_T_hand = self.tf_buffer.lookup_transform("world",
                         "interface_plate", #source frame
                         rospy.Time(0),
                         rospy.Duration(1.0)) #wait for 1 second
-        w_T_hand = do_transform_pose(p, transform)
-        # Publish pose as debug transform
-        t = Transform()
-        t.header = marker.header
-        t.header.frame_id = "world"
-        t.child_frame_id = "interface_plate"
-        t.transform.translation.x = w_T_hand.pose.position.x
-        t.transform.translation.y = w_T_hand.pose.position.y
-        t.transform.translation.z = w_T_hand.pose.position.z
-        t.transform.rotation.x = w_T_hand.pose.orientation.x
-        t.transform.rotation.y = w_T_hand.pose.orientation.y
-        t.transform.rotation.z = w_T_hand.pose.orientation.z
-        t.transform.rotation.w = w_T_hand.pose.orientation.w
-        self.tf_broadcaster.sendTransform(t)
-        self.w_T_hand = t.transform
-
-        # Grab pose as a vector
-        target = np.array([
-            pose_transformed.pose.position.x,
-            pose_transformed.pose.position.y,
-            pose_transformed.pose.position.z,
-            pose_transformed.pose.orientation.w,
-            pose_transformed.pose.orientation.x,
-            pose_transformed.pose.orientation.y,
-            pose_transformed.pose.orientation.z
-        ])
-
-        return target
+        self.w_T_hand = w_T_hand.transform
+        print 'w_T_hand:\n', self.w_T_hand.translation
 
     def solveIK(self, target):
         constraints = list()
@@ -227,10 +174,9 @@ class TagTracker(object):
         # Filter for tags that we care about
         for marker in msg.markers:
             if marker.id != self.config["tag"]: continue
-
-            # Use ROS to translate from camera to world frame
-            self.target = self.markerToWorldFrame(marker)
-            self.cam_T_target = self.get_cam_2_target(marker)
+            self.target = self.get_w_T_cam(marker)
+            self.publish_aruco_as_tf(marker)
+            self.store_w_T_hand(marker)
 
             # Solve for best head position
             q_sol = self.solveIK(self.target[0:3])
@@ -268,13 +214,10 @@ class TagTracker(object):
         self.stop_track()
         return self.cam_T_target
 
-    def keep_transforms(self):
-        self.cam_T_target_array.transforms.append(self.cam_T_target)
-        self.w_T_hand_array.transforms.append(self.w_T_hand)
-
+    # Publish w_T_hand and cam_T_target for visp hand to eye
     def publish_transforms(self):
-        self.w_T_hand_pub.publish(self.w_T_hand_array)
-        self.cam_T_target_pub.publish(self.cam_T_target_array)
+        self.w_T_hand_pub.publish(self.w_T_hand)
+        self.cam_T_target_pub.publish(self.cam_T_target)
 
 def main():
     # Initialize ROS node
